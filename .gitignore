@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Env & Secrets
+.env
+.env.*
+!.env.example
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Daten & Modelle (leben außerhalb bzw. werden nicht versioniert)
+data/
+*.gguf
+*.pkl
+*.monolith
+*.npy
+logs/
+nohup.out
+dump.rdb
+
+# OS
+.DS_Store
