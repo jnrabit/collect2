@@ -1,0 +1,53 @@
+"""Drei-Zonen-Antwortlogik — aus dem stabilisierten Alt-System übernommen.
+
+Distanz-Semantik: ChaosRetrieval liefert dist = (1 - score) * 100.
+  - TRUST     (dist <= trust):            volle Antwort
+  - GRAY      (trust < dist < soft_max):  Antwort MIT Hinweis "nur entfernte Treffer"
+  - FALLBACK  (dist >= soft_max / keine): LLM-Antwort unterdrückt (Halluzinations-Schutz)
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from collect.config import settings
+
+NO_HIT_DISTANCE = 999.0  # Konvention des Alt-Systems für "keine Treffer"
+
+ZONE_TRUST = "TRUST"
+ZONE_GRAY = "GRAUZONE"
+ZONE_FALLBACK = "FALLBACK"
+
+
+@dataclass(frozen=True)
+class ZoneVerdict:
+    zone: str                 # TRUST | GRAUZONE | FALLBACK
+    best_distance: float
+    trust_threshold: float
+    soft_max_distance: float
+
+    @property
+    def allows_answer(self) -> bool:
+        return self.zone != ZONE_FALLBACK
+
+    @property
+    def needs_caution_hint(self) -> bool:
+        return self.zone == ZONE_GRAY
+
+
+def classify_zone(best_distance: Optional[float],
+                  trust_threshold: Optional[float] = None,
+                  soft_max_distance: Optional[float] = None) -> ZoneVerdict:
+    trust = settings.vault_trust_threshold if trust_threshold is None else trust_threshold
+    soft_max = settings.vault_soft_max_distance if soft_max_distance is None else soft_max_distance
+    dist = NO_HIT_DISTANCE if best_distance is None else float(best_distance)
+
+    if dist >= soft_max:
+        zone = ZONE_FALLBACK
+    elif dist > trust:
+        zone = ZONE_GRAY
+    else:
+        zone = ZONE_TRUST
+    return ZoneVerdict(zone=zone, best_distance=dist,
+                       trust_threshold=trust, soft_max_distance=soft_max)

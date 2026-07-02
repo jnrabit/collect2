@@ -39,6 +39,11 @@ _CORE_MODULES = [
     "collect",
     "collect.config",
     "collect.regression_guard",
+    # Retrieval-Kern (leichtgewichtig importierbar; torch lädt erst lazy)
+    "collect.retrieval",
+    "collect.retrieval.vault",
+    "collect.retrieval.chaos",
+    "collect.retrieval.service",
 ]
 
 

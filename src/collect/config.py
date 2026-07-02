@@ -36,11 +36,14 @@ class CollectSettings(BaseSettings):
     # ── Pfade ────────────────────────────────────────────────────────────
     data_dir: Path = Field(default=_LEGACY_DATA_DIR)
     log_dir: Path = Field(default_factory=lambda: Path.home() / "collect2" / "logs")
+    cache_dir: Path = Field(default_factory=lambda: Path.home() / "collect2" / "cache")
 
     knowledge_vault_file: Optional[Path] = None   # default: data_dir/monolith_archive.monolith
     knowledge_cache_file: Optional[Path] = None   # default: data_dir/monolith_embedding_cache.pkl
+    knowledge_field_file: Optional[Path] = None   # default: data_dir/resonance_field.pkl
     code_vault_file: Optional[Path] = None        # default: data_dir/code_archive.monolith
     code_cache_file: Optional[Path] = None        # default: data_dir/code_embedding_cache.pkl
+    code_field_file: Optional[Path] = None        # default: data_dir/code_resonance_field.pkl
     code_centroid_file: Optional[Path] = None     # default: data_dir/code_centroid.npy
 
     # ── Redis ────────────────────────────────────────────────────────────
@@ -59,6 +62,16 @@ class CollectSettings(BaseSettings):
         default="qwen2.5:7b",
         description="Code-Modell; default = main_model, damit nur EIN Modell im VRAM liegt",
     )
+    translate_model: str = Field(
+        default="gemma2:2b",
+        description="Kleines Modell für DE→EN-Query-Übersetzung (Pre-Retrieval)",
+    )
+    decompose_model: str = Field(
+        default="qwen2.5:3b",
+        description="Kleines Modell für Mehr-Aspekt-Query-Zerlegung (Pre-Retrieval)",
+    )
+    translate_enabled: bool = True
+    decompose_enabled: bool = True
 
     # ── Embeddings ──────────────────────────────────────────────────────
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -92,8 +105,10 @@ class CollectSettings(BaseSettings):
         defaults = {
             "knowledge_vault_file": "monolith_archive.monolith",
             "knowledge_cache_file": "monolith_embedding_cache.pkl",
+            "knowledge_field_file": "resonance_field.pkl",
             "code_vault_file": "code_archive.monolith",
             "code_cache_file": "code_embedding_cache.pkl",
+            "code_field_file": "code_resonance_field.pkl",
             "code_centroid_file": "code_centroid.npy",
         }
         for attr, filename in defaults.items():
