@@ -28,6 +28,8 @@ htmlcov/
 
 # Daten & Modelle (leben außerhalb bzw. werden nicht versioniert)
 data/
+workspace/
+cache/
 *.gguf
 *.pkl
 *.monolith
