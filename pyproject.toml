@@ -29,6 +29,8 @@ retrieval = [
 [project.scripts]
 collect-doctor = "collect.doctor:main"
 collect-guard = "collect.regression_guard:main"
+collect-agents = "collect.agents.runner:main"
+collect-ask = "collect.client:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

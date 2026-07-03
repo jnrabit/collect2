@@ -72,7 +72,7 @@ haben Vorrang vor Vault-Treffern. Idiom-System für Code-Aufgaben.
 | query_translator, query_decomposer, vault_router | vibelike | Phase 2 |
 | BaseAgent/Redis-Backbone | collect (Muster) | Phase 3, neu geschrieben nach §5-Regeln |
 | Plan→Decide→Act-Logik | collect | Phase 3; Logik ja, Implementierung neu |
-| validator2 (Static-Validator vor Writes) | vibelike | Phase 3 (Executor) |
+| validator2 (Static-Validator vor Writes) | vibelike | verschoben nach Phase 4 (666 LOC Vollport); Phase 3 nutzt Syntax-Check + regression_guard.check_paths als Pre-Write-Gate |
 | Ossifikat (Submodule), Idiom-System, Triplet-Logging | vibelike | Phase 4 |
 | sandbox, reqqueue, logdb | vibelike | Phase 4/5, nach Bedarf |
 | Terminal/REPL, REST-API, Watchdog | beide | Phase 5, klein geschnitten |
@@ -111,12 +111,16 @@ Agent-Dateien aus collect als Ganzes; alle `attic/`/`experiments/`-Zonen.
   sichern`), Entscheidungen fixiert (dieses Dokument).
 - **Phase 1 — Skelett + Sicherheitsnetz** ✅ src-Layout, pyproject, Pydantic-
   Config, doctor, regression_guard, Pre-Commit-Hook, CI, erste Tests.
-- **Phase 2 — Retrieval-Kern:** Embedding-Backend, Quelibrium-Wrapper,
-  Dual-Vault, Drei-Zonen-Logik, Centroid-Routing, Translator/Decomposer.
-  Messlatte: gleiche Antwortqualität wie Alt-System auf einem festen
-  Query-Set, reproduzierbar per Test.
-- **Phase 3 — Redis-Orchestrierung:** BaseAgent-Hülle, Kern-Agenten,
-  Contribution-Manifest-Finalisierung, Plan→Decide→Act, Executor+validator2.
+- **Phase 2 — Retrieval-Kern** ✅ `collect.retrieval`: Vault-Cipher (numpy,
+  byte-kompatibel zu Alt-Vaults), ChaosRetrieval/ResonanceField (Port aus
+  vibelike), ein Embedding-Backend, Centroid-Routing, Drei-Zonen,
+  Translator/Decomposer, RetrievalService mit RRF-Fusion. Integration gegen
+  echte Vaults als skipif-Tests.
+- **Phase 3 — Redis-Orchestrierung** ✅ Bus (Redis + InMemory), BaseAgent,
+  8 Kern-Agenten (orchestrator, retrieval, code_retrieval, llm, decision,
+  planning, executor, response), Contribution-Manifest-Finalisierung,
+  Plan→Decide→Act, Executor mit Pre-Write-Gate; `collect-agents`/`collect-ask`.
+  Channels laufen unter Prefix `c2.` (Kollisionsschutz zum Alt-System).
 - **Phase 4 — Grounding & Lernen:** Ossifikat, Idiome, Triplet-Logging.
 - **Phase 5 — Oberflächen & Betrieb:** REPL, REST-API, Watchdog, systemd;
   Daten-Migration/Cutover, Alt-Repos archivieren.

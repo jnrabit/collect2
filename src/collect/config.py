@@ -50,6 +50,40 @@ class CollectSettings(BaseSettings):
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
+    channel_prefix: str = Field(
+        default="c2.",
+        description="Namespace für alle Bus-Channels — verhindert Kollision mit "
+                    "dem Alt-System, das auf demselben Redis läuft",
+    )
+
+    # ── Agenten ─────────────────────────────────────────────────────────
+    heartbeat_interval: float = 10.0
+    response_deadline: float = Field(
+        default=120.0,
+        description="Deadline (s) für die Manifest-Finalisierung im ResponseAgent",
+    )
+    plan_deadline: float = Field(
+        default=300.0,
+        description="Deadline (s) für Plan-Queries (Kaskade braucht länger)",
+    )
+    llm_timeout: float = 120.0
+    decide_timeout: float = 90.0
+    step_timeout: float = 60.0
+    max_plan_steps: int = 6
+
+    # ── Executor (Plan-Schritte) ────────────────────────────────────────
+    executor_workspace: Path = Field(
+        default_factory=lambda: Path.home() / "collect2" / "workspace",
+        description="Writes/mkdir/rmdir nur unterhalb dieses Verzeichnisses",
+    )
+    executor_read_roots: list[Path] = Field(
+        default_factory=lambda: [Path.home() / "collect2", Path.home() / "collect"],
+        description="read/list/search nur unterhalb dieser Wurzeln",
+    )
+    executor_allow_execute: bool = Field(
+        default=False,
+        description="execute:-Schritte (Skripte starten) — default aus (Sicherheit)",
+    )
 
     # ── Modelle (lokal-first, Ollama) ───────────────────────────────────
     ollama_host: str = "localhost"
