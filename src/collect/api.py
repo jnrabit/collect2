@@ -28,6 +28,19 @@ def create_app():
 
     app = FastAPI(title="collect2", version="0.1.0")
 
+    @app.get("/")
+    def root():
+        """Wegweiser statt 404 — interaktive Doku unter /docs (Swagger UI)."""
+        return {
+            "service": "collect2",
+            "endpoints": {
+                "GET /api/health": "Redis + Agenten-Heartbeats",
+                "POST /api/query": '{"query": "…"} — synchron, blockiert bis Antwort',
+                "GET /api/facts": "verbürgte Ossifikat-Fakten",
+                "GET /docs": "interaktive API-Doku (Swagger UI)",
+            },
+        }
+
     @app.get("/api/health")
     def health():
         from collect.status import get_agent_status
