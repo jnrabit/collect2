@@ -129,8 +129,15 @@ Agent-Dateien aus collect als Ganzes; alle `attic/`/`experiments/`-Zonen.
   **Bewusst verschoben:** Idiom-System — hat ohne Code-Generierungs-Workflow
   keinen Consumer; Port als toter Scaffold wäre genau der Fehler aus vibelikes
   Audit (§Scaffolds). Kommt mit dem Code-Workflow (Phase 5+).
-- **Phase 5 — Oberflächen & Betrieb:** REPL, REST-API, Watchdog, systemd;
-  Daten-Migration/Cutover, Alt-Repos archivieren.
+- **Phase 5 — Oberflächen & Betrieb** ✅ REPL (collect-repl: Fragen, /status,
+  /review = menschliche Fakten-Bestätigung, /facts), REST-API (collect-api,
+  Port 8767, localhost-only), Status-Schicht (Heartbeats → Redis-Hash),
+  Start/Stop/Status-Skripte + systemd-User-Units (Auto-Restart ersetzt den
+  Bash-Watchdog), Daten-Migration (SHA256-verifiziert kopiert nach
+  ~/collect2/data, COLLECT_DATA_DIR umgestellt).
+  **Offen (bewusst):** endgültiger Cutover = Alt-Stack stoppen + Repos
+  archivieren — Entscheidung des Users, Alt-System läuft bis dahin parallel
+  (Channel-Prefix trennt). API-Härtung (Auth) vor jedem Nicht-localhost-Betrieb.
 
 ## 7. Offene Punkte
 

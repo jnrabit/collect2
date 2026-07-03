@@ -1,0 +1,21 @@
+# systemd-USER-Unit für den Agenten-Stack.
+# Install:  mkdir -p ~/.config/systemd/user && cp deploy/*.service ~/.config/systemd/user/
+#           systemctl --user daemon-reload && systemctl --user enable --now collect-agents
+# Logs:     journalctl --user -u collect-agents -f
+[Unit]
+Description=collect2 Multi-Agent-Stack
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/collect2
+ExecStart=%h/collect2/.venv/bin/collect-agents
+Restart=on-failure
+RestartSec=10
+# Watchdog-Ersatz: systemd übernimmt Auto-Restart mit Backoff
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target

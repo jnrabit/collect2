@@ -14,6 +14,18 @@ git config core.hooksPath .githooks   # Pre-Commit-Regression-Guard aktivieren
 cp .env.example .env               # optional, Defaults sind lauffähig
 ```
 
+## Betrieb
+
+```bash
+bash scripts/start.sh      # Agenten-Stack (Hintergrund, PID-File)
+bash scripts/status.sh     # Heartbeats aller Agenten
+bash scripts/stop.sh
+collect-repl               # interaktiv: Fragen, /status, /review, /facts
+collect-ask "Frage…"       # Einzelanfrage
+collect-api                # REST: /api/health, /api/query, /api/facts (Port 8767)
+# Dauerbetrieb: deploy/*.service (systemd-User-Units, Anleitung im File)
+```
+
 ## Sicherheitsnetz (vor jeder Änderung / im CI)
 
 ```bash
@@ -25,6 +37,8 @@ pytest
 
 ## Stand
 
-Phase 1 (Skelett + Sicherheitsnetz) — siehe DESIGN.md §6 für den Phasenplan.
-Die Vaults (General 259k / Code 1.7k Docs) liegen bis zur Migration in
-`~/collect/data/` und werden via `COLLECT_DATA_DIR` referenziert.
+Phasen 0–5 abgeschlossen — siehe DESIGN.md §6. Die Vaults (General 259k /
+Code 1,5k Docs) liegen migriert in `~/collect2/data/` (`COLLECT_DATA_DIR`
+in `.env`); das Alt-System in `~/collect` bleibt unangetastet als Referenz.
+Grounding-Schleife: TRUST-Antworten erzeugen Staging-Tripel → `/review` im
+REPL verbürgt sie → verbürgte Fakten erden künftige Antworten.

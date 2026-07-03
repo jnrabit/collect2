@@ -27,7 +27,9 @@ _LEGACY_DATA_DIR = Path.home() / "collect" / "data"
 class CollectSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="COLLECT_",
-        env_file=".env",
+        # Repo-.env zuerst, cwd-.env überschreibt — so funktionieren die CLIs
+        # (collect-ask/-repl/-api) aus jedem Arbeitsverzeichnis heraus.
+        env_file=(str(Path.home() / "collect2" / ".env"), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -102,6 +104,11 @@ class CollectSettings(BaseSettings):
                     "(menschliche Bestätigung via ossifikat-CLI macht sie verbürgt)",
     )
     triplet_log_file: Optional[Path] = None  # default: log_dir/triplets.jsonl
+
+    # ── REST-API ────────────────────────────────────────────────────────
+    api_host: str = Field(default="127.0.0.1",
+                          description="Nur localhost — kein Auth-Layer (Phase 5+)")
+    api_port: int = 8767  # 8766 belegt das Alt-System
 
     # ── Modelle (lokal-first, Ollama) ───────────────────────────────────
     ollama_host: str = "localhost"

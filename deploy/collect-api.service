@@ -1,0 +1,15 @@
+# systemd-USER-Unit für das REST-API-Gateway (braucht laufenden Agenten-Stack).
+[Unit]
+Description=collect2 REST-API
+After=collect-agents.service
+Wants=collect-agents.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/collect2
+ExecStart=%h/collect2/.venv/bin/collect-api
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
