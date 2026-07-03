@@ -4,5 +4,11 @@
     "translated": "Apache Spark",
     "model": "gemma2:2b",
     "saved_at": "2026-07-03 00:29:59"
+  },
+  "6b65e71553267c6b": {
+    "original": "Was ist collect2?",
+    "translated": "collect2",
+    "model": "gemma2:2b",
+    "saved_at": "2026-07-03 08:11:20"
   }
 }

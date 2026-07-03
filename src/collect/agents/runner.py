@@ -22,17 +22,20 @@ def build_agents(bus, generate_fn=None):
     """Konstruiert alle Kern-Agenten (Ollama-generate injizierbar für Tests)."""
     from collect.agents.decision import DecisionAgent
     from collect.agents.executor import ExecutorAgent
+    from collect.agents.learning import LearningAgent
     from collect.agents.llm import LLMAgent
     from collect.agents.orchestrator import OrchestratorAgent
     from collect.agents.planning import PlanningAgent
     from collect.agents.response import ResponseAgent
     from collect.agents.retrieval import RetrievalAgent
+    from collect.grounding.facts import FactGrounder
     from collect.retrieval.embedding import get_backend
     from collect.retrieval.router import CodeRouter
     from collect.retrieval.service import VaultSearcher
 
     embedder = get_backend()
     router = CodeRouter.from_config(embedder.embed_one)
+    grounder = FactGrounder(embedder.embed_one)
 
     translator = decomposer = None
     if settings.translate_enabled:
@@ -55,11 +58,12 @@ def build_agents(bus, generate_fn=None):
         RetrievalAgent(bus, general, embedder, kind="retrieval"),
         RetrievalAgent(bus, code, embedder, kind="code_retrieval",
                        trust_threshold=settings.code_vault_trust_threshold),
-        LLMAgent(bus, generate_fn=generate_fn),
+        LLMAgent(bus, generate_fn=generate_fn, grounder=grounder),
         DecisionAgent(bus, generate_fn=generate_fn),
         PlanningAgent(bus),
         ExecutorAgent(bus),
         ResponseAgent(bus),
+        LearningAgent(bus),
     ]
 
 

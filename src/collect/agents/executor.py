@@ -20,6 +20,7 @@ from collect.agents.base import BaseAgent
 from collect.bus import Message
 from collect.config import settings
 from collect.regression_guard import check_paths
+from collect.validation import write_blockers
 
 
 def _within(path: Path, roots: list[Path]) -> bool:
@@ -71,6 +72,9 @@ def execute_action(action: str) -> str:
         if gate["verdict"] == "🔴":
             details = "; ".join(i["detail"] for i in gate["issues"])
             raise StepError(f"Regression-Guard blockt Write: {details}")
+        blockers = write_blockers(content, str(p))
+        if blockers:
+            raise StepError(f"Security-Scan blockt Write: {'; '.join(blockers[:3])}")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"{len(content)} Zeichen → {p}"

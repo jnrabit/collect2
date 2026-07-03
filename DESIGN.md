@@ -121,7 +121,14 @@ Agent-Dateien aus collect als Ganzes; alle `attic/`/`experiments/`-Zonen.
   planning, executor, response), Contribution-Manifest-Finalisierung,
   Plan→Decide→Act, Executor mit Pre-Write-Gate; `collect-agents`/`collect-ask`.
   Channels laufen unter Prefix `c2.` (Kollisionsschutz zum Alt-System).
-- **Phase 4 — Grounding & Lernen:** Ossifikat, Idiome, Triplet-Logging.
+- **Phase 4 — Grounding & Lernen** ✅ Ossifikat als Submodule; FactGrounder
+  (verbürgte Fakten erden Antworten, heben Hard-Fallback auf); LearningAgent
+  (Triplet-Log für alle Antworten, Fakt-Extraktion → Staging NUR für
+  TRUST-Antworten; verbürgt erst nach menschlicher Bestätigung);
+  Security-Scan (validator2-Kern) im Executor-Write-Gate.
+  **Bewusst verschoben:** Idiom-System — hat ohne Code-Generierungs-Workflow
+  keinen Consumer; Port als toter Scaffold wäre genau der Fehler aus vibelikes
+  Audit (§Scaffolds). Kommt mit dem Code-Workflow (Phase 5+).
 - **Phase 5 — Oberflächen & Betrieb:** REPL, REST-API, Watchdog, systemd;
   Daten-Migration/Cutover, Alt-Repos archivieren.
 

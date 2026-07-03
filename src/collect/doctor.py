@@ -48,6 +48,9 @@ _CORE_MODULES = [
     "collect.bus",
     "collect.agents.runner",
     "collect.client",
+    # Grounding & Lernen (Phase 4)
+    "collect.grounding",
+    "collect.validation",
 ]
 
 

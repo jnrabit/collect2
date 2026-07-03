@@ -85,6 +85,24 @@ class CollectSettings(BaseSettings):
         description="execute:-Schritte (Skripte starten) — default aus (Sicherheit)",
     )
 
+    # ── Grounding & Lernen (Ossifikat) ──────────────────────────────────
+    ossifikat_db: Path = Field(
+        default_factory=lambda: Path.home() / "collect2" / "data" / "ossifikat.db",
+        description="Triple-Store; verbürgte Fakten erden Antworten",
+    )
+    ground_on_facts: bool = True
+    fact_top_k: int = 3
+    fact_max_distance: float = Field(
+        default=0.55,
+        description="Cosine-Distanz-Schwelle für Fakt-Relevanz (vibelike-Wert)",
+    )
+    extract_facts: bool = Field(
+        default=True,
+        description="TRUST-Antworten per LLM in Staging-Tripel zerlegen "
+                    "(menschliche Bestätigung via ossifikat-CLI macht sie verbürgt)",
+    )
+    triplet_log_file: Optional[Path] = None  # default: log_dir/triplets.jsonl
+
     # ── Modelle (lokal-first, Ollama) ───────────────────────────────────
     ollama_host: str = "localhost"
     ollama_port: int = 11434
@@ -148,6 +166,8 @@ class CollectSettings(BaseSettings):
         for attr, filename in defaults.items():
             if getattr(self, attr) is None:
                 setattr(self, attr, self.data_dir / filename)
+        if self.triplet_log_file is None:
+            self.triplet_log_file = self.log_dir / "triplets.jsonl"
 
 
 settings = CollectSettings()

@@ -99,6 +99,21 @@ class ResponseAgent(BaseAgent):
 
         self.publish(state["reply_to"], "user_response",
                      {"text": text, "meta": meta}, cid)
+
+        # Lern-Event für den LearningAgent (Triplet-Log + Fakt-Staging) —
+        # asynchron zum Antwort-Pfad, der Nutzer wartet nie aufs Lernen.
+        context_ids = []
+        for kind in ("retrieval", "code_retrieval"):
+            contrib = state["contribs"].get(kind) or {}
+            context_ids.extend(h.get("doc_id") for h in contrib.get("hits", []))
+        self.publish("answer_recorded", "answer_recorded", {
+            "query": state["query"],
+            "text": text,
+            "zone": meta.get("zone"),
+            "best_distance": meta.get("best_distance"),
+            "plan_id": meta.get("plan_id"),
+            "context_ids": context_ids,
+        }, cid)
         self.log.info("%s: finalisiert (%s, %.1fs)", cid[:8], reason, meta["duration_s"])
 
 
@@ -125,11 +140,14 @@ def synthesize(state: dict) -> tuple[str, dict]:
     meta["zone"] = verdict.zone
     meta["best_distance"] = verdict.best_distance
 
-    # 2. LLM-Antwort mit Drei-Zonen-Logik
+    # 2. LLM-Antwort mit Drei-Zonen-Logik. Verbürgte Fakten heben den
+    # Hard-Fallback auf: eine von Fakten geerdete Antwort wird nicht unterdrückt.
     llm = contribs.get("llm")
+    facts_used = int(llm.get("facts_used", 0)) if llm else 0
+    meta["facts_used"] = facts_used
     if llm is not None:
         content = (llm.get("content") or "").strip()
-        if verdict.zone == ZONE_FALLBACK and not planning:
+        if verdict.zone == ZONE_FALLBACK and not planning and not (facts_used and content):
             parts.append(
                 "⚠️ Diese Frage liegt außerhalb des indizierten Wissensbereichs. "
                 "Der Vault enthält keine ausreichend nahen Dokumente "
@@ -149,6 +167,8 @@ def synthesize(state: dict) -> tuple[str, dict]:
 
     # 3. Quellen-Fußzeile
     footer = []
+    if facts_used:
+        footer.append(f"🔖 {facts_used} verbürgte(r) Fakt(en) als Grounding")
     if retrieval and retrieval.get("count"):
         footer.append(f"📚 General-Vault: {retrieval['count']} Treffer "
                       f"(beste Distance {retrieval.get('best_distance', 0):.1f})")

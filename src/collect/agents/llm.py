@@ -30,9 +30,12 @@ SYSTEM_PROMPT = (
 class LLMAgent(BaseAgent):
     name = "llm"
 
-    def __init__(self, bus, generate_fn: Optional[Callable] = None):
+    def __init__(self, bus, generate_fn: Optional[Callable] = None, grounder=None):
+        """grounder: optionaler FactGrounder — verbürgte Ossifikat-Fakten
+        werden dem Prompt autoritativ vorangestellt."""
         super().__init__(bus)
         self.generate = generate_fn or ollama.generate
+        self.grounder = grounder
         self._pending: dict[str, dict] = {}  # cid → {query, needs, contribs}
         # Beiträge, die VOR dem llm_request eintreffen (Race: Retrieval kann
         # schneller sein als die Zustellung des Requests) — begrenzt gepuffert.
@@ -75,28 +78,39 @@ class LLMAgent(BaseAgent):
             return
         del self._pending[cid]
 
+        # Verbürgte Fakten (Ossifikat) — autoritatives Grounding
+        facts = []
+        if self.grounder:
+            try:
+                facts = self.grounder.relevant_facts(state["effective"] or state["query"])
+            except Exception as e:
+                self.log.warning("%s: Fakt-Grounding fehlgeschlagen: %s", cid[:8], e)
+
         zones = [c.get("zone") for c in state["contribs"].values()]
-        if zones and all(z == ZONE_FALLBACK for z in zones):
-            self.log.info("%s: alle Zonen FALLBACK — LLM übersprungen", cid[:8])
+        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts:
+            self.log.info("%s: alle Zonen FALLBACK, keine Fakten — LLM übersprungen", cid[:8])
             self.publish("llm_response", "llm_response",
-                         {"content": "", "skipped": True, "model": ""}, cid)
+                         {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
             return
 
         self.progress(cid, "llm_generating", "Antwort wird generiert…")
-        prompt = self._build_prompt(state)
+        prompt = self._build_prompt(state, facts)
         try:
             content = self.generate(prompt, system=SYSTEM_PROMPT)
             self.publish("llm_response", "llm_response", {
                 "content": content.strip(), "skipped": False,
                 "model": settings.main_model,
+                "facts_used": len(facts),
             }, cid)
-            self.log.info("%s: Antwort generiert (%d Zeichen)", cid[:8], len(content))
+            self.log.info("%s: Antwort generiert (%d Zeichen, %d Fakten)",
+                          cid[:8], len(content), len(facts))
         except Exception as e:
             self.log.error("%s: LLM-Fehler: %s", cid[:8], e)
             self.publish("llm_response", "llm_response",
-                         {"content": "", "skipped": False, "error": str(e)}, cid)
+                         {"content": "", "skipped": False, "error": str(e),
+                          "facts_used": len(facts)}, cid)
 
-    def _build_prompt(self, state: dict) -> str:
+    def _build_prompt(self, state: dict, facts: list | None = None) -> str:
         docs = []
         for kind in ("retrieval", "code_retrieval"):
             contrib = state["contribs"].get(kind)
@@ -105,12 +119,20 @@ class LLMAgent(BaseAgent):
             docs.extend(contrib.get("hits", []))
         docs.sort(key=lambda h: h.get("distance", 999.0))
 
+        # Verbürgte Fakten VOR den Quellen — bei Widerspruch haben sie Vorrang
+        fact_block = ""
+        if facts:
+            fl = "\n".join(f"- {f['content']}" for f in facts)
+            fact_block = ("VERBÜRGTE FAKTEN (vom Nutzer bestätigt — als gesichert "
+                          "behandeln, bei Widerspruch haben sie Vorrang vor den "
+                          f"QUELLEN):\n{fl}\n\n")
+
         parts = []
         for i, doc in enumerate(docs[:TOP_DOCS], 1):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
             parts.append(f"[{i}] {title}:\n{doc.get('content', '')[:DOC_CHARS]}")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
-        return (f"QUELLEN:\n{context}\n\n"
+        return (f"{fact_block}QUELLEN:\n{context}\n\n"
                 f"FRAGE: {state['query']}\n\n"
-                f"Antworte gestützt auf die Quellen.")
+                f"Antworte gestützt auf die verbürgten Fakten und Quellen.")
