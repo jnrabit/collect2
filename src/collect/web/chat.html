@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>collect2 — Chat</title>
+<!-- KaTeX für LaTeX-Mathe aus den ARXIV-Quellen ($…$ / $$…$$ / \(…\)).
+     CDN: ohne Internet degradiert es sauber zu Rohtext. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <style>
   :root {
     --bg: #12141a; --panel: #1b1e27; --border: #2b2f3d;
@@ -82,6 +87,24 @@ function el(cls, text) {
 
 function setBusy(b) { busy = b; send.disabled = b; input.disabled = b; if (!b) input.focus(); }
 
+function renderMath(node) {
+  // Erst NACH der finalen Antwort rendern (nie auf halbem Streaming-LaTeX).
+  // Sicher: der Text steht via textContent im DOM (kein HTML-Injection-Pfad),
+  // KaTeX ersetzt dann nur erkannte Mathe-Segmente.
+  if (typeof renderMathInElement !== "function") return;
+  try {
+    renderMathInElement(node, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false },
+      ],
+      throwOnError: false,
+    });
+  } catch (e) { /* Rohtext bleibt lesbar */ }
+}
+
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws/chat`);
   ws.onopen = () => { conn.textContent = "🟢 verbunden"; setBusy(false); };
@@ -109,6 +132,7 @@ function connect() {
       const d = streamEl || el("msg bot", "");
       streamEl = null;
       d.textContent = m.data.text || "(leer)";
+      renderMath(d);
       const meta = m.data.meta || {};
       if (meta.zone) {
         const info = document.createElement("div");

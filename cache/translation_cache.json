@@ -16,5 +16,11 @@
     "translated": "quantum physics",
     "model": "gemma2:2b",
     "saved_at": "2026-07-04 07:32:56"
+  },
+  "14d18f8dbc5b3f63": {
+    "original": "kannst du mir etwas über quantenverschränkung erzählen",
+    "translated": "Quantum confinement",
+    "model": "gemma2:2b",
+    "saved_at": "2026-07-04 17:01:32"
   }
 }
