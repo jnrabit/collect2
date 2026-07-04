@@ -157,3 +157,10 @@ def test_ws_chat_rejects_empty_query(client):
     with c.websocket_connect("/ws/chat") as ws:
         ws.send_json({"query": "   "})
         assert ws.receive_json()["type"] == "error"
+
+
+def test_chat_page_title_replaced(client):
+    c, _ = client
+    text = c.get("/chat").text
+    assert "{{TITLE}}" not in text
+    assert settings.display_name in text  # default: "collect2 · hótr̥"

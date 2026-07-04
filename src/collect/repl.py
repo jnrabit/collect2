@@ -84,7 +84,7 @@ def cmd_review(input_fn=input, print_fn=print) -> str:
 
 
 def repl(input_fn=input, print_fn=print) -> int:
-    print_fn(f"collect2 REPL — {HELP}")
+    print_fn(f"{settings.display_name} REPL — {HELP}")
     while True:
         try:
             line = input_fn("\n> ").strip()

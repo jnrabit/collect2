@@ -25,6 +25,10 @@ _LEGACY_DATA_DIR = Path.home() / "collect" / "data"
 
 
 class CollectSettings(BaseSettings):
+    # Anzeigename (Chat-Header, REPL, API-Titel). Technischer Name bleibt
+    # `collect` — wie beim Vorbild: vibelike hieß zur Anzeige hótr̥, der Code
+    # blieb vibelike ("Rebrand ist rein kosmetisch", vibelike/README).
+    display_name: str = "collect2 · hótr̥"
     model_config = SettingsConfigDict(
         env_prefix="COLLECT_",
         # Repo-.env zuerst, cwd-.env überschreibt — so funktionieren die CLIs

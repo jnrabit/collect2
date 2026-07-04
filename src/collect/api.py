@@ -41,7 +41,7 @@ def create_app():
     from fastapi import FastAPI, HTTPException, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, RedirectResponse
 
-    app = FastAPI(title="collect2", version="0.1.0")
+    app = FastAPI(title=settings.display_name, version="0.1.0")
 
     @app.get("/")
     def root():
@@ -50,7 +50,8 @@ def create_app():
 
     @app.get("/chat")
     def chat():
-        return HTMLResponse(CHAT_HTML.read_text(encoding="utf-8"))
+        html = CHAT_HTML.read_text(encoding="utf-8")
+        return HTMLResponse(html.replace("{{TITLE}}", settings.display_name))
 
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
