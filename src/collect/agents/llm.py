@@ -150,13 +150,20 @@ class LLMAgent(BaseAgent):
         return result, {}
 
     def _build_prompt(self, state: dict, facts: list | None = None) -> str:
-        docs = []
+        # Reihenfolge der Retrieval-Agenten BEIBEHALTEN (lexikalisch rerankt —
+        # ein erneutes Distanz-Sortieren würde das Rerank zunichte machen);
+        # bei both-Route General/Code abwechselnd verschränken.
+        per_vault = []
         for kind in ("retrieval", "code_retrieval"):
             contrib = state["contribs"].get(kind)
             if not contrib or contrib.get("zone") == ZONE_FALLBACK:
                 continue  # entfernte Treffer erden, Fallback-Treffer nicht
-            docs.extend(contrib.get("hits", []))
-        docs.sort(key=lambda h: h.get("distance", 999.0))
+            per_vault.append(contrib.get("hits", []))
+        docs = []
+        for i in range(max((len(v) for v in per_vault), default=0)):
+            for vault_hits in per_vault:
+                if i < len(vault_hits):
+                    docs.append(vault_hits[i])
 
         # Verbürgte Fakten VOR den Quellen — bei Widerspruch haben sie Vorrang
         fact_block = ""

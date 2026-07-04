@@ -43,6 +43,13 @@ class ThompsonSampler:
         b = np.array([self.beta[d] for d in id_map], dtype=np.float32)
         return self.rng.beta(a, b).astype(np.float32)
 
+    def batch_mean(self, id_map: list) -> np.ndarray:
+        """Posterior-Mean a/(a+b) — deterministisch. Frische Docs → 0.5 (kein
+        Rauschen); Feedback verschiebt den Mean wie beim Sampling."""
+        a = np.array([self.alpha[d] for d in id_map], dtype=np.float32)
+        b = np.array([self.beta[d] for d in id_map], dtype=np.float32)
+        return (a / (a + b)).astype(np.float32)
+
     def exploration_scores(self, id_map: list) -> np.ndarray:
         a = np.array([self.alpha[d] for d in id_map], dtype=np.float32)
         b = np.array([self.beta[d] for d in id_map], dtype=np.float32)
@@ -110,17 +117,24 @@ class ChaosRetrieval:
     def __init__(self, store: VaultStore, engine: Optional[NativeEngine] = None,
                  field: Optional[ResonanceField] = None,
                  embed_dim: int = 384, lorenz_dims: int = 8,
-                 thompson_seed: Optional[int] = None):
+                 thompson_seed: Optional[int] = None,
+                 deterministic: Optional[bool] = None):
+        from collect.config import settings
         self.store = store
         self.engine = engine
         self.field = field
+        self.deterministic = (settings.retrieval_deterministic
+                              if deterministic is None else deterministic)
         self.warp = RiemannianWarp(embed_dim, lorenz_dims)
         self.thompson = ThompsonSampler(seed=thompson_seed)
-        # Basis-Gewichte (entropie-moduliert in search)
-        self.alpha = 0.5
-        self.beta = 0.2
-        self.gamma = 0.2
-        self.delta = 0.1
+        if self.deterministic:
+            # Cosine dominiert: spreizt relevante vs. irrelevante Queries
+            # (Benchmark: bessere Zonen-Trennung); Thompson/Resonanz/
+            # Exploration bleiben als milde Lern-Nudges erhalten.
+            self.alpha, self.beta, self.gamma, self.delta = 0.8, 0.05, 0.1, 0.05
+        else:
+            # Basis-Gewichte des Alt-Systems (entropie-moduliert in search)
+            self.alpha, self.beta, self.gamma, self.delta = 0.5, 0.2, 0.2, 0.1
         self._last_retrieved: list = []
         self._search_count: int = 0
 
@@ -145,22 +159,26 @@ class ChaosRetrieval:
             lorenz_state = s
             entropy = min(1.0, s.get("entropy", 4.0) / 8.0)
 
-        # Resonanz-Kraft → Warp (8D-Lorenz-Position; z2/w2 liefert die Engine
-        # nicht → Default 0)
-        r_force = None
-        if self.field:
-            lp = np.array([
-                lorenz_state.get("x1", 0), lorenz_state.get("y1", 0),
-                lorenz_state.get("z1", 0), lorenz_state.get("w1", 0),
-                lorenz_state.get("x2", 0), lorenz_state.get("y2", 0),
-                lorenz_state.get("z2", 0), lorenz_state.get("w2", 0),
-            ], dtype=np.float32)
-            r_force = self.field.get_lorenz_force(lp)
-
-        self.warp.update(lorenz_state, r_force)
-
-        warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
-        thomp_arr = self.thompson.batch_sample(id_map)
+        # Deterministischer Modus: Warp bleibt Identität (reine Cosine),
+        # Thompson liefert den Posterior-Mean statt einer Zufalls-Ziehung.
+        if self.deterministic:
+            warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
+            thomp_arr = self.thompson.batch_mean(id_map)
+        else:
+            # Chaos-Modus des Alt-Systems: Resonanz-Kraft → Warp (8D-Lorenz;
+            # z2/w2 liefert die Engine nicht → Default 0)
+            r_force = None
+            if self.field:
+                lp = np.array([
+                    lorenz_state.get("x1", 0), lorenz_state.get("y1", 0),
+                    lorenz_state.get("z1", 0), lorenz_state.get("w1", 0),
+                    lorenz_state.get("x2", 0), lorenz_state.get("y2", 0),
+                    lorenz_state.get("z2", 0), lorenz_state.get("w2", 0),
+                ], dtype=np.float32)
+                r_force = self.field.get_lorenz_force(lp)
+            self.warp.update(lorenz_state, r_force)
+            warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
+            thomp_arr = self.thompson.batch_sample(id_map)
         explor_arr = self.thompson.exploration_scores(id_map)
 
         # Resonanz: nur Top-20 als Anker (argpartition: O(n))
@@ -173,17 +191,25 @@ class ChaosRetrieval:
             boosts = self.field.get_resonance_boost(id_map, top20_ids)
             if boosts:
                 res_arr = np.array([boosts.get(d, 0.0) for d in id_map], dtype=np.float32)
-                rmax = res_arr.max()
-                if rmax > 0:
-                    res_arr /= rmax
+                # Absolute Sättigung raw/(raw+3) statt Max-Normalisierung.
+                # Die Normalisierung blies die ERSTE Ko-Aktivierung zum vollen
+                # γ-Boost auf (=20 Distanzpunkte Sprung zwischen zwei Läufen
+                # derselben Query; Nonsens rutschte so in TRUST). Cap 0.5:
+                # Gelerntes darf nudgen (≤ halber γ-Boost), nie über eine
+                # ganze Zone teleportieren.
+                res_arr = np.minimum(res_arr / (res_arr + 3.0), 0.5)
 
-        # Entropie-modulierte Koeffizienten
-        exp_mode = entropy
-        expl_mode = 1.0 - entropy
-        a = self.alpha * expl_mode + 0.3 * exp_mode
-        b = self.beta * exp_mode + 0.1 * expl_mode
-        g = self.gamma * expl_mode + 0.1 * exp_mode
-        d = self.delta * exp_mode + 0.05 * expl_mode
+        if self.deterministic:
+            # Statische Gewichte — keine Entropie-Modulation
+            a, b, g, d = self.alpha, self.beta, self.gamma, self.delta
+        else:
+            # Entropie-modulierte Koeffizienten
+            exp_mode = entropy
+            expl_mode = 1.0 - entropy
+            a = self.alpha * expl_mode + 0.3 * exp_mode
+            b = self.beta * exp_mode + 0.1 * expl_mode
+            g = self.gamma * expl_mode + 0.1 * exp_mode
+            d = self.delta * exp_mode + 0.05 * expl_mode
 
         scores = a * warp_arr + b * thomp_arr + g * res_arr + d * explor_arr
         top_k_indices = np.argpartition(scores, -top_k)[-top_k:]

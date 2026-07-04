@@ -145,12 +145,32 @@ class CollectSettings(BaseSettings):
                     "und die 8GB VRAM gehören vollständig der LLM",
     )
 
-    # ── Routing & Antwortlogik (Werte aus dem stabilisierten Alt-System) ─
+    # ── Retrieval-Verhalten ─────────────────────────────────────────────
+    retrieval_deterministic: bool = Field(
+        default=True,
+        description="Reproduzierbares Scoring: Thompson-Posterior-MEAN statt "
+                    "Sampling, statische Gewichte statt Entropie-Modulation, "
+                    "Warp aus (reine Cosine-Basis). Benchmark-Befund: mit "
+                    "Sampling schwankte dieselbe Query um bis zu 24 Distanz-"
+                    "punkte und Nonsens erreichte TRUST. False = Chaos-Modus "
+                    "des Alt-Systems.",
+    )
+    lexical_rerank_boost: float = Field(
+        default=10.0,
+        description="Reorder der Top-Treffer nach Query-Term-Überlappung "
+                    "(Distanz-Punkte Bonus bei voller Überlappung; 0 = aus). "
+                    "Ändert nur die Reihenfolge, nie Distanzen/Zonen.",
+    )
+
+    # ── Routing & Antwortlogik ──────────────────────────────────────────
     code_route_high: float = 0.40
     code_route_low: float = 0.25
-    vault_trust_threshold: float = 55.0
-    vault_soft_max_distance: float = 68.0
-    code_vault_trust_threshold: float = 62.0
+    # Zonen-Schwellen — rekalibriert auf das deterministische Scoring
+    # (Benchmark 2026-07: relevante Queries 17–47, Nonsens ab ~51; die
+    # Alt-System-Werte 55/68 galten für das entropie-modulierte Scoring).
+    vault_trust_threshold: float = 50.0
+    vault_soft_max_distance: float = 62.0
+    code_vault_trust_threshold: float = 57.0
 
     # ── Timeouts ────────────────────────────────────────────────────────
     query_timeout: float = 180.0

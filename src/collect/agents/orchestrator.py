@@ -18,18 +18,33 @@ from collect.bus import Message
 from collect.config import settings
 from collect.retrieval.router import ROUTE_GENERAL
 
-# Aus dem Alt-System übernommen (bewusst breite Heuristik; Verfeinerung ist
-# ein bekanntes offenes Thema, siehe AUDIT im Alt-Repo)
-PLAN_KEYWORDS = (
-    "plan", "erstell", "organisier", "koordinier", "strukturier",
-    "workflow", "ablaufplan", "roadmap", "aufgabenplan", "aufgabe",
-    "schritt", "phase", "projekt",
-)
+import re
+
+# Ersetzt die Substring-Heuristik des Alt-Systems. Deren Fehlerklassen:
+# 'plan' in 'explain' → JEDE englische Explain-Frage startete die Kaskade;
+# 'phase' triggerte auf "Phase-Locking", 'aufgabe'/'schritt'/'projekt' auf
+# gewöhnliche Wissensfragen. Jetzt: Wortgrenzen + Plan-SUBSTANTIVE bzw.
+# Imperativ ("erstelle/plane/organisiere …") in Kombination mit Plan-Objekt.
+_PLAN_NOUNS = re.compile(
+    r"\b(plan|pläne|plaene|ablaufplan(s|es)?|aufgabenplan(s|es)?|roadmap|workflow|"
+    r"schritte|steps)\b",  # Plural! Singular ('Schritt für Schritt') ist Erklär-Sprache
+    re.IGNORECASE)
+_PLAN_IMPERATIVE = re.compile(
+    r"\b(erstelle?|plane?|organisiere?|koordiniere?|strukturiere?|"
+    r"create|organize|coordinate)\b",
+    re.IGNORECASE)
 
 
 def is_plan_query(query: str) -> bool:
-    q = query.lower()
-    return any(kw in q for kw in PLAN_KEYWORDS)
+    """Plan-Substantiv reicht; ein Imperativ-Verb nur zusammen mit einem
+    Handlungs-Objekt im Satz (verhindert 'Erkläre mir …'-Fehltreffer)."""
+    if _PLAN_NOUNS.search(query):
+        return True
+    if _PLAN_IMPERATIVE.search(query):
+        return bool(re.search(
+            r"\b(schritte|steps|verzeichnis|datei(en)?|directory|file|struktur)\b",
+            query, re.IGNORECASE))
+    return False
 
 
 class OrchestratorAgent(BaseAgent):

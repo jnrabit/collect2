@@ -32,16 +32,17 @@ class RetrievalAgent(BaseAgent):
         return {f"{self.kind}_request": self.on_request}
 
     def on_request(self, msg: Message) -> None:
-        subqueries = msg.data.get("subqueries") or [msg.data.get("query", "")]
+        query = msg.data.get("query", "")
+        subqueries = msg.data.get("subqueries") or [query]
         cid = msg.correlation_id
 
-        hits = []
+        hits, best = [], None
         if self.searcher.store.ready:
             vecs = list(self.embedder.embed(subqueries))
-            merged = self.searcher.search(vecs, top_k=30)
+            merged = self.searcher.search(vecs, top_k=30, query_text=query)
             hits = self.searcher.hits(merged, MAX_HITS)
+            best = self.searcher.best_distance(merged)
 
-        best = min((h.distance for h in hits), default=None)
         verdict = classify_zone(best, trust_threshold=self.trust_threshold)
 
         self.publish(f"{self.kind}_response", f"{self.kind}_response", {

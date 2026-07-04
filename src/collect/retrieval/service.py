@@ -62,6 +62,44 @@ class RetrievalResult:
     diagnostics: dict = field(default_factory=dict)
 
 
+# Kleines DE+EN-Stopwort-Set für die Query-Term-Extraktion des Reranks
+_STOPWORDS = frozenset(
+    "der die das den dem des ein eine einen einem einer und oder aber wie was "
+    "ist sind wird werden nicht mit von zu auf in aus für über unter zwischen "
+    "the a an and or but how what is are was were will not with of to on in "
+    "for about does do can could would should it its this that".split())
+
+
+def query_terms(query: str) -> list[str]:
+    import re
+    return [w for w in re.findall(r"[a-zA-ZäöüÄÖÜß0-9]{3,}", query.lower())
+            if w not in _STOPWORDS]
+
+
+def lexical_rerank(query: str, merged: list[tuple], doc_text_fn,
+                   boost: Optional[float] = None) -> list[tuple]:
+    """Reorder nach Term-Überlappung: adjusted = dist − overlap·boost.
+
+    Benchmark-Befund: 'TLS handshake' rankte ein Dokument über SOZIALES
+    Händeschütteln vor Transport Layer Security — reine Embedding-Nähe
+    verwechselt Wortfelder. Exakte Query-Terme im Text korrigieren das.
+    Distanzen/Zonen bleiben unverändert — nur die Reihenfolge (und damit,
+    welche Docs den LLM-Prompt erden) ändert sich.
+    """
+    boost = settings.lexical_rerank_boost if boost is None else boost
+    terms = query_terms(query)
+    if boost <= 0 or not terms or not merged:
+        return merged
+
+    def adjusted(item):
+        doc_id, dist = item
+        text = doc_text_fn(doc_id)[:1500].lower()
+        overlap = sum(1 for t in terms if t in text) / len(terms)
+        return dist - overlap * boost
+
+    return sorted(merged, key=adjusted)
+
+
 def rrf_merge(ranked_lists: list[list[tuple]], k: int = RRF_K) -> list[tuple]:
     """Fusioniert mehrere (doc_id, distance)-Rankings per Reciprocal Rank Fusion.
 
@@ -95,15 +133,28 @@ class VaultSearcher:
                                     embed_dim=settings.embedding_dim,
                                     thompson_seed=thompson_seed)
 
-    def search(self, query_vecs: list, top_k: int) -> list[tuple]:
-        """Sucht pro Query-Vektor, fusioniert per RRF → [(doc_id, dist), …]."""
+    def search(self, query_vecs: list, top_k: int,
+               query_text: Optional[str] = None) -> list[tuple]:
+        """Sucht pro Query-Vektor, fusioniert per RRF, rerankt lexikalisch
+        (falls query_text) → [(doc_id, dist), …]. Die Zonen-Klassifikation
+        gehört auf min(dist) DIESER Liste — nicht auf die getrimmten Hits."""
         if not self.store.ready:
             return []
         rankings = [self.chaos.search(v, top_k=top_k) for v in query_vecs]
         rankings = [r for r in rankings if r]
         if not rankings:
             return []
-        return rrf_merge(rankings)[:top_k]
+        merged = rrf_merge(rankings)[:top_k]
+        if query_text:
+            merged = lexical_rerank(
+                query_text, merged,
+                lambda d: (self.store.get_doc(d) or {}).get("title", "")
+                + " " + self.store.doc_text(d))
+        return merged
+
+    @staticmethod
+    def best_distance(merged: list[tuple]) -> Optional[float]:
+        return min((dist for _, dist in merged), default=None)
 
     def hits(self, merged: list[tuple], max_hits: int) -> list[VaultHit]:
         out = []
@@ -190,17 +241,19 @@ class RetrievalService:
             },
         )
 
-        # 5+6. Suche + Zonen pro Vault
+        # 5+6. Suche (inkl. lexikalischem Rerank) + Zonen pro Vault.
+        # Zone aus min(dist) der UNGETRIMMTEN Liste — das Rerank ändert nur
+        # die Reihenfolge (welche Docs den LLM-Prompt erden), nie die Zone.
         if route in (ROUTE_GENERAL, ROUTE_BOTH):
-            merged = self.general.search(vecs, top_k)
+            merged = self.general.search(vecs, top_k, query_text=effective)
             result.general = VaultResult(hits=self.general.hits(merged, max_hits))
-            result.general.verdict = classify_zone(result.general.best_distance)
+            result.general.verdict = classify_zone(VaultSearcher.best_distance(merged))
 
         if route in (ROUTE_CODE, ROUTE_BOTH):
-            merged = self.code.search(vecs, top_k)
+            merged = self.code.search(vecs, top_k, query_text=effective)
             result.code = VaultResult(hits=self.code.hits(merged, max_hits))
             result.code.verdict = classify_zone(
-                result.code.best_distance,
+                VaultSearcher.best_distance(merged),
                 trust_threshold=settings.code_vault_trust_threshold)
 
         logger.info(

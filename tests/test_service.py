@@ -68,7 +68,7 @@ def test_retrieve_code_route_uses_code_threshold(mini_store):
     r = svc.retrieve(query, top_k=4)
     assert r.route == "code"
     assert r.general is None and r.code is not None
-    assert r.code.verdict.trust_threshold == 62.0  # Code-Schwelle, nicht 55
+    assert r.code.verdict.trust_threshold == 57.0  # Code-Schwelle, nicht 50
 
 
 def test_retrieve_without_preprocessing_keeps_query(mini_store):

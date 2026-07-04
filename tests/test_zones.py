@@ -42,5 +42,6 @@ def test_no_hits_is_fallback():
 
 def test_defaults_from_settings():
     v = classify_zone(10.0)
-    assert v.trust_threshold == 55.0
-    assert v.soft_max_distance == 68.0
+    # Kalibrierung fürs deterministische Scoring (siehe config + Benchmark)
+    assert v.trust_threshold == 50.0
+    assert v.soft_max_distance == 62.0
