@@ -69,7 +69,7 @@ const form = document.getElementById("form");
 const input = document.getElementById("input");
 const send = document.getElementById("send");
 const conn = document.getElementById("conn");
-let ws = null, busy = false, progressEl = null;
+let ws = null, busy = false, progressEl = null, streamEl = null;
 
 function el(cls, text) {
   const d = document.createElement("div");
@@ -95,21 +95,35 @@ function connect() {
     if (m.type === "progress") {
       if (!progressEl) progressEl = el("progress", "");
       progressEl.textContent = `⏳ ${m.data.stage}${m.data.detail ? ": " + m.data.detail : ""}`;
+    } else if (m.type === "token") {
+      // Live-Streaming: Antwort baut sich auf, Zähler läuft mit
+      if (!streamEl) streamEl = el("msg bot", "");
+      streamEl.textContent += m.data.delta || "";
+      if (!progressEl) progressEl = el("progress", "");
+      progressEl.textContent = `⚡ ${m.data.tokens ?? "…"} tok`;
+      log.scrollTop = log.scrollHeight;
     } else if (m.type === "answer") {
       if (progressEl) { progressEl.remove(); progressEl = null; }
-      const d = el("msg bot", m.data.text || "(leer)");
+      // Streaming-Bubble weiterverwenden: finaler Text ersetzt den rohen
+      // Stream (enthält zusätzlich Zonen-Hinweis + Quellen-Fußzeile)
+      const d = streamEl || el("msg bot", "");
+      streamEl = null;
+      d.textContent = m.data.text || "(leer)";
       const meta = m.data.meta || {};
       if (meta.zone) {
         const info = document.createElement("div");
         info.className = "meta";
         info.textContent = `zone=${meta.zone} · distance=${(meta.best_distance ?? 0).toFixed(1)}` +
           ` · ${meta.duration_s ?? "?"}s` +
+          (meta.tokens ? ` · ⚡ ${meta.tokens} tok @ ${meta.tok_per_s ?? "?"} tok/s` : "") +
           (meta.facts_used ? ` · 🔖 ${meta.facts_used} Fakt(en)` : "");
         d.appendChild(info);
       }
+      log.scrollTop = log.scrollHeight;
       setBusy(false);
     } else if (m.type === "error") {
       if (progressEl) { progressEl.remove(); progressEl = null; }
+      streamEl = null;
       el("msg bot", "⚠️ " + m.detail);
       setBusy(false);
     }

@@ -40,9 +40,9 @@ else
     cd "$ROOT" || exit 1
     ( setsid nohup "$ROOT/.venv/bin/collect-agents" > "$LOG" 2>&1 < /dev/null &
       echo $! > "$PIDFILE" )
-    # Vault-Load braucht ~45s (259k Docs + Embedding-Modell) — auf "online" warten
-    echo -n "Stack startet (Vaults laden, ~45s) "
-    for _ in {1..60}; do
+    # Vault-Load braucht ~45s, bei kaltem Disk-Cache auch >2min — auf "online" warten
+    echo -n "Stack startet (Vaults laden, ~45s–3min) "
+    for _ in {1..90}; do
         grep -q "Agenten online" "$LOG" 2>/dev/null && break
         kill -0 "$(cat "$PIDFILE")" 2>/dev/null || { echo; echo "✗ Abgestürzt — siehe $LOG"; exit 1; }
         echo -n "."; sleep 2

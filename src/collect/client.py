@@ -28,7 +28,8 @@ def stream(query: str, timeout: float | None = None):
     reply_channel = f"user_response.{cid}"
 
     pubsub = r.pubsub(ignore_subscribe_messages=True)
-    pubsub.subscribe(f"{prefix}{reply_channel}", f"{prefix}progress")
+    pubsub.subscribe(f"{prefix}{reply_channel}", f"{prefix}progress",
+                     f"{prefix}llm_interim")
     try:
         r.publish(f"{prefix}user_query", Message(
             type="user_query", data={"query": query},
@@ -47,6 +48,8 @@ def stream(query: str, timeout: float | None = None):
                 continue
             if msg.get("type") == "progress":
                 yield ("progress", msg.get("data", {}))
+            elif msg.get("type") == "llm_interim":
+                yield ("token", msg.get("data", {}))
             elif msg.get("type") == "user_response":
                 yield ("answer", msg.get("data", {}))
                 return
@@ -58,12 +61,12 @@ def stream(query: str, timeout: float | None = None):
 
 def ask(query: str, timeout: float | None = None, show_progress: bool = False) -> dict:
     for kind, data in stream(query, timeout):
-        if kind == "progress":
-            if show_progress:
-                print(f"  ⏳ {data.get('stage', '?')}: {data.get('detail', '')}",
-                      file=sys.stderr)
-        else:
+        if kind == "progress" and show_progress:
+            print(f"  ⏳ {data.get('stage', '?')}: {data.get('detail', '')}",
+                  file=sys.stderr)
+        elif kind == "answer":
             return data
+        # token-Events konsumiert nur der Web-Chat — CLI wartet auf die Synthese
     return {"text": "⚠️ Keine Antwort.", "meta": {"timeout": True}}
 
 

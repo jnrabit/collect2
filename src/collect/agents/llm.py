@@ -32,9 +32,11 @@ class LLMAgent(BaseAgent):
 
     def __init__(self, bus, generate_fn: Optional[Callable] = None, grounder=None):
         """grounder: optionaler FactGrounder — verbürgte Ossifikat-Fakten
-        werden dem Prompt autoritativ vorangestellt."""
+        werden dem Prompt autoritativ vorangestellt.
+        generate_fn: (prompt, system=, on_token=) → str ODER (str, stats) —
+        Rückgabe-Formate beider ollama-Varianten werden akzeptiert."""
         super().__init__(bus)
-        self.generate = generate_fn or ollama.generate
+        self.generate = generate_fn or ollama.generate_streaming
         self.grounder = grounder
         self._pending: dict[str, dict] = {}  # cid → {query, needs, contribs}
         # Beiträge, die VOR dem llm_request eintreffen (Race: Retrieval kann
@@ -96,19 +98,56 @@ class LLMAgent(BaseAgent):
         self.progress(cid, "llm_generating", "Antwort wird generiert…")
         prompt = self._build_prompt(state, facts)
         try:
-            content = self.generate(prompt, system=SYSTEM_PROMPT)
+            content, stats = self._generate_streamed(cid, prompt)
             self.publish("llm_response", "llm_response", {
                 "content": content.strip(), "skipped": False,
                 "model": settings.main_model,
                 "facts_used": len(facts),
+                **stats,  # eval_count, tok_per_s (falls Streaming-Backend)
             }, cid)
-            self.log.info("%s: Antwort generiert (%d Zeichen, %d Fakten)",
-                          cid[:8], len(content), len(facts))
+            self.log.info("%s: Antwort generiert (%d Zeichen, %d Fakten, %s tok/s)",
+                          cid[:8], len(content), len(facts), stats.get("tok_per_s"))
         except Exception as e:
             self.log.error("%s: LLM-Fehler: %s", cid[:8], e)
             self.publish("llm_response", "llm_response",
                          {"content": "", "skipped": False, "error": str(e),
                           "facts_used": len(facts)}, cid)
+
+    # Interim-Batching: pro Ollama-Chunk (≈1 Token) publizieren würde den Bus
+    # fluten; gesammelt wird bis ~80 Zeichen oder 150ms.
+    _FLUSH_CHARS = 80
+    _FLUSH_SECS = 0.15
+
+    def _generate_streamed(self, cid: str, prompt: str) -> tuple[str, dict]:
+        import time as _time
+
+        buf: list[str] = []
+        tokens = [0]
+        last_flush = [_time.monotonic()]
+
+        def flush():
+            if buf:
+                self.publish("llm_interim", "llm_interim",
+                             {"delta": "".join(buf), "tokens": tokens[0]}, cid)
+                buf.clear()
+                last_flush[0] = _time.monotonic()
+
+        def on_token(delta: str):
+            buf.append(delta)
+            tokens[0] += 1
+            if (sum(len(x) for x in buf) >= self._FLUSH_CHARS
+                    or _time.monotonic() - last_flush[0] >= self._FLUSH_SECS):
+                flush()
+
+        try:
+            result = self.generate(prompt, system=SYSTEM_PROMPT, on_token=on_token)
+        except TypeError:
+            # Backend ohne on_token-Support (z.B. non-streaming generate)
+            result = self.generate(prompt, system=SYSTEM_PROMPT)
+        flush()
+        if isinstance(result, tuple):
+            return result[0], (result[1] or {})
+        return result, {}
 
     def _build_prompt(self, state: dict, facts: list | None = None) -> str:
         docs = []

@@ -145,6 +145,9 @@ def synthesize(state: dict) -> tuple[str, dict]:
     llm = contribs.get("llm")
     facts_used = int(llm.get("facts_used", 0)) if llm else 0
     meta["facts_used"] = facts_used
+    if llm and llm.get("eval_count"):
+        meta["tokens"] = llm["eval_count"]
+        meta["tok_per_s"] = llm.get("tok_per_s")
     if llm is not None:
         content = (llm.get("content") or "").strip()
         if verdict.zone == ZONE_FALLBACK and not planning and not (facts_used and content):

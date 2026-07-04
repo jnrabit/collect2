@@ -10,5 +10,11 @@
     "translated": "collect2",
     "model": "gemma2:2b",
     "saved_at": "2026-07-03 08:11:20"
+  },
+  "69384b22ef919792": {
+    "original": "kannst du mir etwas über quantenphysik erzählen",
+    "translated": "quantum physics",
+    "model": "gemma2:2b",
+    "saved_at": "2026-07-04 07:32:56"
   }
 }
