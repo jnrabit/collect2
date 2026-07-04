@@ -47,6 +47,24 @@ def is_plan_query(query: str) -> bool:
     return False
 
 
+# Code-Workflow: explizites `code:`-Prefix ODER Implementier-Verb +
+# Code-Objekt. Bewusst konservativ — Wissensfragen über Code ("Wie
+# funktioniert eine Klasse?") gehen weiter den Retrieval-Weg.
+_CODE_VERBS = re.compile(
+    r"\b(implementiere?|implement|refaktoriere?|refactor|fixe?|bugfix|"
+    r"schreibe?|write|baue?|build)\b", re.IGNORECASE)
+_CODE_OBJECTS = re.compile(
+    r"\b(funktion(en)?|function(s)?|klasse(n)?|class(es)?|methode(n)?|"
+    r"method(s)?|modul(e)?|module(s)?|test(s)?|skript(e)?|script(s)?|"
+    r"bug(s)?|code)\b", re.IGNORECASE)
+
+
+def is_code_task(query: str) -> bool:
+    if query.strip().lower().startswith("code:"):
+        return True
+    return bool(_CODE_VERBS.search(query) and _CODE_OBJECTS.search(query))
+
+
 class OrchestratorAgent(BaseAgent):
     name = "orchestrator"
 
@@ -67,7 +85,11 @@ class OrchestratorAgent(BaseAgent):
         self.log.info("Anfrage %s: %s…", cid[:8], query[:60])
         self.progress(cid, "query_received", query[:80])
 
-        # Plan-Queries laufen exklusiv über die Kaskade
+        # Code-Task VOR Plan prüfen (Implementier-Tasks enthalten oft
+        # Plan-Vokabular); beide Pfade laufen exklusiv.
+        if is_code_task(query):
+            self._dispatch_workflow(query, cid, msg)
+            return
         if is_plan_query(query):
             self._dispatch_plan(query, cid, msg)
             return
@@ -120,6 +142,17 @@ class OrchestratorAgent(BaseAgent):
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:
             self.publish("code_retrieval_request", "code_retrieval_request", request, cid)
+
+    def _dispatch_workflow(self, query: str, cid: str, msg: Message) -> None:
+        task = query.split(":", 1)[1].strip() if query.lower().startswith("code:") else query
+        self.log.info("Code-Task erkannt — Workflow-Pfad.")
+        self.progress(cid, "workflow_started", "Code-Workflow wird initiiert")
+        self.publish("response_manifest", "response_manifest", {
+            "query": query,
+            "expected": ["workflow"],
+            "deadline": settings.plan_deadline,
+        }, cid, reply_to=msg.reply_to)
+        self.publish("workflow_request", "workflow_request", {"task": task}, cid)
 
     def _dispatch_plan(self, query: str, cid: str, msg: Message) -> None:
         self.log.info("Planungs-Anfrage erkannt — Plan→Decide→Act-Kaskade.")

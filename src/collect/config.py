@@ -91,6 +91,23 @@ class CollectSettings(BaseSettings):
         description="execute:-Schritte (Skripte starten) — default aus (Sicherheit)",
     )
 
+    # ── Code-Workflow (Phase 6) ─────────────────────────────────────────
+    workflow_repo: Optional[Path] = Field(
+        default=None,
+        description="Ziel-Repo für Code-Workflows; default: executor_workspace/repo. "
+                    "Verify führt dort pytest (= generierten Code!) aus — bewusst "
+                    "auf dieses Verzeichnis begrenzt.",
+    )
+    workflow_verify_timeout: float = 120.0
+    workflow_max_files: int = 4
+    workflow_repair_rounds: int = Field(
+        default=2,
+        description="Bei rotem Verify: Fehler-Output zurück ans LLM, Datei "
+                    "korrigieren, erneut verifizieren (0 = aus). Real brauchte "
+                    "Runde 1 den vergessenen Import, Runde 2 die überstrenge "
+                    "Test-Erwartung.",
+    )
+
     # ── Grounding & Lernen (Ossifikat) ──────────────────────────────────
     ossifikat_db: Path = Field(
         default_factory=lambda: Path.home() / "collect2" / "data" / "ossifikat.db",
@@ -199,6 +216,8 @@ class CollectSettings(BaseSettings):
                 setattr(self, attr, self.data_dir / filename)
         if self.triplet_log_file is None:
             self.triplet_log_file = self.log_dir / "triplets.jsonl"
+        if self.workflow_repo is None:
+            self.workflow_repo = self.executor_workspace / "repo"
 
 
 settings = CollectSettings()

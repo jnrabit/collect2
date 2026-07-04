@@ -30,6 +30,7 @@ CONTRIB_CHANNELS = {
     "code_retrieval_response": "code_retrieval",
     "llm_response": "llm",
     "planning_response": "planning",
+    "workflow_response": "workflow",
 }
 
 
@@ -124,12 +125,17 @@ def synthesize(state: dict) -> tuple[str, dict]:
     parts: list[str] = []
     meta: dict = {}
 
-    # 1. Plan-Sektion zuerst — Plan-Antworten werden nie unterdrückt
+    # 1. Plan-/Workflow-Sektion zuerst — werden nie unterdrückt
     planning = contribs.get("planning")
     if planning:
         parts.append(planning.get("message", ""))
         meta["plan_id"] = planning.get("plan_id")
         meta["executed"] = planning.get("executed")
+    workflow = contribs.get("workflow")
+    if workflow:
+        parts.append(workflow.get("report", ""))
+        meta["workflow_ok"] = workflow.get("ok")
+        meta["committed"] = workflow.get("committed")
 
     # Zonen-Lage über die Retrieval-Beiträge
     retrieval = contribs.get("retrieval")
@@ -150,7 +156,8 @@ def synthesize(state: dict) -> tuple[str, dict]:
         meta["tok_per_s"] = llm.get("tok_per_s")
     if llm is not None:
         content = (llm.get("content") or "").strip()
-        if verdict.zone == ZONE_FALLBACK and not planning and not (facts_used and content):
+        if (verdict.zone == ZONE_FALLBACK and not planning and not workflow
+                and not (facts_used and content)):
             parts.append(
                 "⚠️ Diese Frage liegt außerhalb des indizierten Wissensbereichs. "
                 "Der Vault enthält keine ausreichend nahen Dokumente "

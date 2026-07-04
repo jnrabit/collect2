@@ -28,6 +28,7 @@ def build_agents(bus, generate_fn=None):
     from collect.agents.planning import PlanningAgent
     from collect.agents.response import ResponseAgent
     from collect.agents.retrieval import RetrievalAgent
+    from collect.agents.workflow import WorkflowAgent
     from collect.grounding.facts import FactGrounder
     from collect.retrieval.embedding import get_backend
     from collect.retrieval.router import CodeRouter
@@ -64,6 +65,7 @@ def build_agents(bus, generate_fn=None):
         ExecutorAgent(bus),
         ResponseAgent(bus),
         LearningAgent(bus),
+        WorkflowAgent(bus, generate_fn=generate_fn),
     ]
 
 

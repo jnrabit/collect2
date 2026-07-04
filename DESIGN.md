@@ -139,6 +139,16 @@ Agent-Dateien aus collect als Ganzes; alle `attic/`/`experiments/`-Zonen.
   archivieren — Entscheidung des Users, Alt-System läuft bis dahin parallel
   (Channel-Prefix trennt). API-Härtung (Auth) vor jedem Nicht-localhost-Betrieb.
 
+- **Phase 6 — Code-Workflow** (begonnen): `collect.workflow` — Briefing →
+  Planning → Execution → Verify → Commit als kleine Phasen-Module + Engine
+  (der Anti-Monolith-Schnitt, den vibelikes Audit als größten Hebel benennt).
+  Gates vor jedem Write: Syntax + regression_guard + Security-Scan.
+  Verify = pytest im Workflow-Repo (führt generierten Code aus — deshalb
+  auf settings.workflow_repo im Workspace begrenzt). Commit nur bei grünem
+  Verify. WorkflowAgent als 10. Agent; Orchestrator-Heuristik: `code:`-Prefix
+  oder Implementier-Verb + Code-Objekt. Idiom-System + Sandbox folgen als
+  Ausbau, jetzt existiert ihr Consumer.
+
 ## 7. Offene Punkte
 
 - Endgültiger Projektname (Arbeitstitel `collect2`, Paketname `collect`).
