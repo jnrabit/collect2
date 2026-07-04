@@ -15,7 +15,9 @@ from collect.bus import Message, new_id
 from collect.config import settings
 
 
-def ask(query: str, timeout: float | None = None, show_progress: bool = False) -> dict:
+def stream(query: str, timeout: float | None = None):
+    """Generator: yieldet ("progress", data)-Events und final genau ein
+    ("answer", data). Gemeinsamer Kern für CLI (ask) und Web-Chat (WebSocket)."""
     import redis as redis_lib
 
     timeout = timeout or settings.query_timeout
@@ -44,17 +46,25 @@ def ask(query: str, timeout: float | None = None, show_progress: bool = False) -
             if msg.get("correlation_id") != cid:
                 continue
             if msg.get("type") == "progress":
-                if show_progress:
-                    d = msg.get("data", {})
-                    print(f"  ⏳ {d.get('stage', '?')}: {d.get('detail', '')}",
-                          file=sys.stderr)
-                continue
-            if msg.get("type") == "user_response":
-                return msg.get("data", {})
-        return {"text": f"⚠️ Timeout nach {timeout:.0f}s — keine Antwort.",
-                "meta": {"timeout": True}}
+                yield ("progress", msg.get("data", {}))
+            elif msg.get("type") == "user_response":
+                yield ("answer", msg.get("data", {}))
+                return
+        yield ("answer", {"text": f"⚠️ Timeout nach {timeout:.0f}s — keine Antwort.",
+                          "meta": {"timeout": True}})
     finally:
         pubsub.close()
+
+
+def ask(query: str, timeout: float | None = None, show_progress: bool = False) -> dict:
+    for kind, data in stream(query, timeout):
+        if kind == "progress":
+            if show_progress:
+                print(f"  ⏳ {data.get('stage', '?')}: {data.get('detail', '')}",
+                      file=sys.stderr)
+        else:
+            return data
+    return {"text": "⚠️ Keine Antwort.", "meta": {"timeout": True}}
 
 
 def main() -> int:

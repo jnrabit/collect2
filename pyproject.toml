@@ -29,6 +29,7 @@ retrieval = [
 api = [
     "fastapi>=0.111",
     "uvicorn>=0.30",
+    "websockets>=12",  # WS-Protokoll für uvicorn (/ws/chat)
 ]
 
 [project.scripts]
@@ -43,7 +44,7 @@ collect-api = "collect.api:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-collect = ["retrieval/lib/*.so"]
+collect = ["retrieval/lib/*.so", "web/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

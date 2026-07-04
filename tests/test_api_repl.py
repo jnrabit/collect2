@@ -115,3 +115,45 @@ def test_repl_review_confirms_and_rejects(tmp_path, monkeypatch):
     assert len(confirmed) == 1 and confirmed[0].subject == "Gut"
     assert s.list_staging() == []
     s.close()
+
+
+# ── Web-Chat ─────────────────────────────────────────────────────────────
+
+def test_chat_page_served(client):
+    c, _ = client
+    resp = c.get("/chat")
+    assert resp.status_code == 200
+    assert "collect2" in resp.text and "ws/chat" in resp.text
+
+
+def test_root_redirects_to_chat(client):
+    c, _ = client
+    resp = c.get("/", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/chat"
+
+
+def test_ws_chat_streams_progress_then_answer(client, monkeypatch):
+    c, mp = client
+    import collect.client
+
+    def fake_stream(query, timeout=None):
+        yield ("progress", {"stage": "routing", "detail": "general"})
+        yield ("answer", {"text": f"Antwort: {query}", "meta": {"zone": "TRUST"}})
+
+    mp.setattr(collect.client, "stream", fake_stream)
+    with c.websocket_connect("/ws/chat") as ws:
+        ws.send_json({"query": "Testfrage"})
+        first = ws.receive_json()
+        assert first == {"type": "progress",
+                         "data": {"stage": "routing", "detail": "general"}}
+        second = ws.receive_json()
+        assert second["type"] == "answer"
+        assert second["data"]["text"] == "Antwort: Testfrage"
+
+
+def test_ws_chat_rejects_empty_query(client):
+    c, _ = client
+    with c.websocket_connect("/ws/chat") as ws:
+        ws.send_json({"query": "   "})
+        assert ws.receive_json()["type"] == "error"

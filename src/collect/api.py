@@ -1,9 +1,11 @@
-"""REST-API — dünnes FastAPI-Gateway vor dem Agenten-Stack.
+"""REST-API + Web-Chat — dünnes FastAPI-Gateway vor dem Agenten-Stack.
 
 Nur localhost (settings.api_host), kein Auth-Layer — Härtung (Token,
 Capabilities wie vibelikes web/auth.py) kommt vor jedem breiteren Exposure.
 
     collect-api                      # startet uvicorn
+    GET  /chat                       # Web-Chat (eine HTML-Seite, kein Build)
+    WS   /ws/chat                    # Query rein, Progress+Antwort raus
     GET  /api/health                 # Redis + Agenten-Heartbeats
     POST /api/query {"query": "…"}   # synchron, blockiert bis Antwort
     GET  /api/facts                  # verbürgte Fakten
@@ -11,11 +13,23 @@ Capabilities wie vibelikes web/auth.py) kommt vor jedem breiteren Exposure.
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from collect.config import settings
+
+# Modulebene nötig: wegen `from __future__ import annotations` löst FastAPI
+# die Typ-Hints über die Modul-Globals auf — ein nur in create_app lokal
+# importiertes WebSocket würde als Query-Parameter fehlinterpretiert.
+try:
+    from fastapi import WebSocket
+except ImportError:  # fastapi ist optionales Extra [api]
+    WebSocket = None
+
+CHAT_HTML = Path(__file__).parent / "web" / "chat.html"
 
 
 class QueryRequest(BaseModel):
@@ -24,22 +38,48 @@ class QueryRequest(BaseModel):
 
 
 def create_app():
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, WebSocketDisconnect
+    from fastapi.responses import HTMLResponse, RedirectResponse
 
     app = FastAPI(title="collect2", version="0.1.0")
 
     @app.get("/")
     def root():
-        """Wegweiser statt 404 — interaktive Doku unter /docs (Swagger UI)."""
-        return {
-            "service": "collect2",
-            "endpoints": {
-                "GET /api/health": "Redis + Agenten-Heartbeats",
-                "POST /api/query": '{"query": "…"} — synchron, blockiert bis Antwort',
-                "GET /api/facts": "verbürgte Ossifikat-Fakten",
-                "GET /docs": "interaktive API-Doku (Swagger UI)",
-            },
-        }
+        """Die nackte URL führt direkt in den Chat."""
+        return RedirectResponse(url="/chat")
+
+    @app.get("/chat")
+    def chat():
+        return HTMLResponse(CHAT_HTML.read_text(encoding="utf-8"))
+
+    @app.websocket("/ws/chat")
+    async def ws_chat(ws: WebSocket):
+        """Pro Nachricht {query}: Progress-Events streamen, dann die Antwort.
+        client.stream() blockiert (Redis-Pubsub) → läuft im Thread-Pool."""
+        from collect.client import stream
+
+        await ws.accept()
+        try:
+            while True:
+                req = await ws.receive_json()
+                query = str(req.get("query", "")).strip()
+                if not query:
+                    await ws.send_json({"type": "error", "detail": "Leere Query."})
+                    continue
+                events = stream(query)
+                try:
+                    while True:
+                        item = await asyncio.to_thread(next, events, None)
+                        if item is None:
+                            break
+                        kind, data = item
+                        await ws.send_json({"type": kind, "data": data})
+                        if kind == "answer":
+                            break
+                finally:
+                    events.close()
+        except WebSocketDisconnect:
+            pass
 
     @app.get("/api/health")
     def health():
