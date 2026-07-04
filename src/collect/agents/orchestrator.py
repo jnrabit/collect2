@@ -113,6 +113,9 @@ class OrchestratorAgent(BaseAgent):
             **request,
             "original_query": query,
             "needs": [e for e in expected if e != "llm"],
+            # Gesprächskontext: nur für die Synthese — Retrieval/Routing
+            # laufen auf der aktuellen Query
+            "history": msg.data.get("history") or [],
         }, cid)
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:

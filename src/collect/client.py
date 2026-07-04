@@ -15,9 +15,12 @@ from collect.bus import Message, new_id
 from collect.config import settings
 
 
-def stream(query: str, timeout: float | None = None):
+def stream(query: str, timeout: float | None = None, history: list | None = None):
     """Generator: yieldet ("progress", data)-Events und final genau ein
-    ("answer", data). Gemeinsamer Kern für CLI (ask) und Web-Chat (WebSocket)."""
+    ("answer", data). Gemeinsamer Kern für CLI (ask) und Web-Chat (WebSocket).
+
+    history: optionale Liste von {"q": …, "a": …}-Paaren (die letzten Turns);
+    fließt nur in die LLM-Synthese, nicht ins Retrieval."""
     import redis as redis_lib
 
     timeout = timeout or settings.query_timeout
@@ -32,7 +35,7 @@ def stream(query: str, timeout: float | None = None):
                      f"{prefix}llm_interim")
     try:
         r.publish(f"{prefix}user_query", Message(
-            type="user_query", data={"query": query},
+            type="user_query", data={"query": query, "history": history or []},
             correlation_id=cid, reply_to=reply_channel, source="client").to_json())
 
         deadline = time.time() + timeout
@@ -59,8 +62,9 @@ def stream(query: str, timeout: float | None = None):
         pubsub.close()
 
 
-def ask(query: str, timeout: float | None = None, show_progress: bool = False) -> dict:
-    for kind, data in stream(query, timeout):
+def ask(query: str, timeout: float | None = None, show_progress: bool = False,
+        history: list | None = None) -> dict:
+    for kind, data in stream(query, timeout, history=history):
         if kind == "progress" and show_progress:
             print(f"  ⏳ {data.get('stage', '?')}: {data.get('detail', '')}",
                   file=sys.stderr)

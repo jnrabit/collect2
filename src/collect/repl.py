@@ -85,6 +85,7 @@ def cmd_review(input_fn=input, print_fn=print) -> str:
 
 def repl(input_fn=input, print_fn=print) -> int:
     print_fn(f"{settings.display_name} REPL — {HELP}")
+    history: list[dict] = []
     while True:
         try:
             line = input_fn("\n> ").strip()
@@ -106,10 +107,12 @@ def repl(input_fn=input, print_fn=print) -> int:
         elif line.startswith("/"):
             print_fn(f"Unbekannter Befehl: {line} — {HELP}")
         else:
-            result = ask(line, show_progress=True)
+            result = ask(line, show_progress=True, history=list(history))
             print_fn("\n" + result.get("text", ""))
             meta = result.get("meta", {})
             if meta and not meta.get("timeout"):
+                history.append({"q": line, "a": result.get("text", "")})
+                del history[:-5]
                 print_fn(f"\n[zone={meta.get('zone')} "
                          f"distance={meta.get('best_distance', 0):.1f} "
                          f"dauer={meta.get('duration_s')}s]")

@@ -137,7 +137,7 @@ def test_ws_chat_streams_progress_then_answer(client, monkeypatch):
     c, mp = client
     import collect.client
 
-    def fake_stream(query, timeout=None):
+    def fake_stream(query, timeout=None, history=None):
         yield ("progress", {"stage": "routing", "detail": "general"})
         yield ("answer", {"text": f"Antwort: {query}", "meta": {"zone": "TRUST"}})
 

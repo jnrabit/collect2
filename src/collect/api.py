@@ -56,10 +56,12 @@ def create_app():
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
         """Pro Nachricht {query}: Progress-Events streamen, dann die Antwort.
-        client.stream() blockiert (Redis-Pubsub) → läuft im Thread-Pool."""
+        client.stream() blockiert (Redis-Pubsub) → läuft im Thread-Pool.
+        Gesprächskontext lebt pro Verbindung (Seite neu laden = neues Gespräch)."""
         from collect.client import stream
 
         await ws.accept()
+        history: list[dict] = []
         try:
             while True:
                 req = await ws.receive_json()
@@ -67,7 +69,7 @@ def create_app():
                 if not query:
                     await ws.send_json({"type": "error", "detail": "Leere Query."})
                     continue
-                events = stream(query)
+                events = stream(query, history=list(history))
                 try:
                     while True:
                         item = await asyncio.to_thread(next, events, None)
@@ -76,6 +78,9 @@ def create_app():
                         kind, data = item
                         await ws.send_json({"type": kind, "data": data})
                         if kind == "answer":
+                            if not data.get("meta", {}).get("timeout"):
+                                history.append({"q": query, "a": data.get("text", "")})
+                                del history[:-5]  # letzte 5 Turns reichen
                             break
                 finally:
                     events.close()

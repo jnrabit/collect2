@@ -57,6 +57,7 @@ class LLMAgent(BaseAgent):
             "effective": msg.data.get("query", ""),
             "needs": set(msg.data.get("needs") or ["retrieval"]),
             "contribs": self._early.pop(cid, {}),
+            "history": msg.data.get("history") or [],
         }
         self._maybe_generate(cid)
 
@@ -178,7 +179,20 @@ class LLMAgent(BaseAgent):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
             parts.append(f"[{i}] {title}:\n{doc.get('content', '')[:DOC_CHARS]}")
 
+        # Gesprächskontext: letzte Turns, Antworten gekürzt — genug für
+        # Rückbezüge ("und wie genau?"), ohne den Prompt zu fluten
+        history_block = ""
+        history = state.get("history") or []
+        if history:
+            lines = []
+            for turn in history[-3:]:
+                lines.append(f"Nutzer: {str(turn.get('q', ''))[:300]}")
+                lines.append(f"Du: {str(turn.get('a', ''))[:500]}")
+            history_block = ("BISHERIGES GESPRÄCH (für Rückbezüge — die "
+                             "aktuelle FRAGE hat Vorrang):\n"
+                             + "\n".join(lines) + "\n\n")
+
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
-        return (f"{fact_block}QUELLEN:\n{context}\n\n"
+        return (f"{history_block}{fact_block}QUELLEN:\n{context}\n\n"
                 f"FRAGE: {state['query']}\n\n"
                 f"Antworte gestützt auf die verbürgten Fakten und Quellen.")
