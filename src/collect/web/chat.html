@@ -183,7 +183,8 @@ function connect() {
         info.textContent = `zone=${meta.zone} · distance=${(meta.best_distance ?? 0).toFixed(1)}` +
           ` · ${meta.duration_s ?? "?"}s` +
           (meta.tokens ? ` · ⚡ ${meta.tokens} tok @ ${meta.tok_per_s ?? "?"} tok/s` : "") +
-          (meta.facts_used ? ` · 🔖 ${meta.facts_used} Fakt(en)` : "");
+          (meta.facts_used ? ` · 🔖 ${meta.facts_used} Fakt(en)` : "") +
+          (meta.rewritten_query ? ` · ↻ „${meta.rewritten_query}"` : "");
         d.appendChild(info);
       }
       log.scrollTop = log.scrollHeight;

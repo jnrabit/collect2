@@ -66,7 +66,16 @@ class VaultStore:
         doc = self.get_doc(doc_id)
         if not doc:
             return ""
-        return doc.get("text", doc.get("content", ""))
+        # str(): einzelne Vault-Docs tragen ein Dict/Objekt als Feldwert
+        return str(doc.get("text", doc.get("content", "")))
+
+    def search_blob(self, doc_id) -> str:
+        """Titel + Text als ein String — robuste Basis fürs lexikalische
+        Rerank (Felder können in einzelnen Vault-Docs kein str sein)."""
+        doc = self.get_doc(doc_id)
+        if not doc:
+            return ""
+        return f"{doc.get('title', '')} {self.doc_text(doc_id)}"
 
     @property
     def ready(self) -> bool:

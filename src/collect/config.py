@@ -152,6 +152,15 @@ class CollectSettings(BaseSettings):
     )
     translate_enabled: bool = True
     decompose_enabled: bool = True
+    rewrite_enabled: bool = Field(
+        default=True,
+        description="Referenzielle Folgefragen vor dem Retrieval zu "
+                    "eigenständigen Fragen umformen (Follow-up-Retrieval)",
+    )
+    rewrite_model: str = Field(
+        default="",
+        description="Modell fürs Query-Rewrite; leer = decompose_model",
+    )
 
     # ── Embeddings ──────────────────────────────────────────────────────
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"

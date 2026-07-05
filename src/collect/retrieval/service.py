@@ -93,7 +93,7 @@ def lexical_rerank(query: str, merged: list[tuple], doc_text_fn,
 
     def adjusted(item):
         doc_id, dist = item
-        text = doc_text_fn(doc_id)[:1500].lower()
+        text = str(doc_text_fn(doc_id))[:1500].lower()
         overlap = sum(1 for t in terms if t in text) / len(terms)
         return dist - overlap * boost
 
@@ -146,10 +146,7 @@ class VaultSearcher:
             return []
         merged = rrf_merge(rankings)[:top_k]
         if query_text:
-            merged = lexical_rerank(
-                query_text, merged,
-                lambda d: (self.store.get_doc(d) or {}).get("title", "")
-                + " " + self.store.doc_text(d))
+            merged = lexical_rerank(query_text, merged, self.store.search_blob)
         return merged
 
     @staticmethod
@@ -164,8 +161,8 @@ class VaultSearcher:
                 continue
             out.append(VaultHit(
                 doc_id=str(doc_id), distance=float(dist),
-                title=doc.get("title", ""), source=doc.get("source", ""),
-                content=doc.get("text", doc.get("content", "")),
+                title=str(doc.get("title", "")), source=str(doc.get("source", "")),
+                content=self.store.doc_text(doc_id),
             ))
         return out
 

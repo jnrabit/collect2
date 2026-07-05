@@ -35,14 +35,14 @@ BENCH = [
 ]
 
 
-def run(repeats: int) -> dict:
+def _build_service():
     from collect.config import settings
     from collect.retrieval.embedding import EmbeddingBackend
     from collect.retrieval.router import CodeRouter
     from collect.retrieval.service import RetrievalService, VaultSearcher
 
     emb = EmbeddingBackend()
-    svc = RetrievalService(
+    return RetrievalService(
         embedder=emb, translator=None, decomposer=None,
         router=CodeRouter.from_config(emb.embed_one),
         general=VaultSearcher(settings.knowledge_vault_file,
@@ -52,6 +52,10 @@ def run(repeats: int) -> dict:
                            settings.code_cache_file,
                            settings.code_field_file),
     )
+
+
+def run(repeats: int, svc=None) -> dict:
+    svc = svc or _build_service()
 
     rows = []
     for query, want_route, answerable, terms in BENCH:
@@ -102,13 +106,81 @@ def run(repeats: int) -> dict:
     }
 
 
+# Follow-up-Szenarien: (Turn-1-Frage, kanonische Kurzantwort, referenzielle
+# Folgefrage, erwartete Begriffe in den Top-3). Baseline = Folgefrage roh;
+# Vergleich = nach Rewrite (echtes qwen2.5:3b via Ollama).
+FOLLOWUP = [
+    ("What is Apache Spark?", "Apache Spark ist eine Cluster-Engine für große Datenmengen.",
+     "und wofür wird es praktisch eingesetzt?", ["spark"]),
+    ("What is quantum entanglement?", "Quantenverschränkung ist eine Korrelation zwischen Teilchen.",
+     "wofür kann man das nutzen?", ["entangle", "quantum"]),
+    ("How does the TLS handshake work?", "Der TLS-Handshake handelt Schlüssel für sichere Verbindungen aus.",
+     "warum ist das sicher?", ["tls", "secur", "encrypt", "ssl", "handshake"]),
+    ("Python global interpreter lock", "Der GIL serialisiert Threads im CPython-Interpreter.",
+     "wie kann man ihn umgehen?", ["gil", "python", "thread", "interpreter"]),
+    ("Was ist der Unterschied zwischen TCP und UDP?", "TCP ist verbindungsorientiert, UDP verbindungslos.",
+     "und welches ist schneller?", ["tcp", "udp", "transport"]),
+    ("transformer neural network attention mechanism", "Attention gewichtet Eingabe-Teile im Transformer.",
+     "wer hat das erfunden?", ["attention", "transformer"]),
+]
+
+
+def _relevant(vault, terms) -> bool:
+    tops = vault.hits[:3] if vault else []
+    blob = " ".join((h.title + " " + h.content[:300]).lower() for h in tops)
+    return any(t in blob for t in terms)
+
+
+def run_followup(svc) -> dict:
+    from collect.retrieval.rewriter import rewrite
+
+    rows = []
+    for turn1, answer, followup, terms in FOLLOWUP:
+        history = [{"q": turn1, "a": answer}]
+        rw = rewrite(followup, history)  # echtes Rewrite-Modell
+
+        base = svc.retrieve(followup, top_k=30, max_hits=5)
+        base_vault = base.general or base.code
+        base_rel = _relevant(base_vault, terms)
+
+        if rw["applied"]:
+            after = svc.retrieve(rw["rewritten"], top_k=30, max_hits=5)
+            after_vault = after.general or after.code
+            after_rel = _relevant(after_vault, terms)
+        else:
+            after_vault, after_rel = base_vault, base_rel
+
+        rows.append({
+            "followup": followup,
+            "rewritten": rw["rewritten"] if rw["applied"] else "(kein Rewrite)",
+            "base_rel": base_rel,
+            "base_zone": base_vault.verdict.zone if base_vault else "—",
+            "after_rel": after_rel,
+            "after_zone": after_vault.verdict.zone if after_vault else "—",
+        })
+    return {
+        "rows": rows,
+        "summary": {
+            "baseline_relevant": sum(r["base_rel"] for r in rows),
+            "rewrite_relevant": sum(r["after_rel"] for r in rows),
+            "total": len(rows),
+        },
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repeats", type=int, default=3)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-followup", action="store_true",
+                    help="Follow-up-Sektion überspringen (braucht Ollama)")
     args = ap.parse_args()
 
-    result = run(args.repeats)
+    svc = _build_service()
+    result = run(args.repeats, svc=svc)
+    if not args.no_followup:
+        result["followup"] = run_followup(svc)
+
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=1))
         return 0
@@ -123,6 +195,19 @@ def main() -> int:
     print("─" * 130)
     print(f"Zonen stabil: {s['zone_stable']} | relevant: {s['relevant']} | "
           f"antwortbar ok: {s['answerable_ok']} | max ΔDist: {s['max_dist_range']}")
+
+    if "followup" in result:
+        fu = result["followup"]
+        print(f"\n{'Folgefrage':<38} {'Rewrite':<44} {'roh':<11} {'rewritten':<11}")
+        print("─" * 108)
+        for r in fu["rows"]:
+            base = f"{'✓' if r['base_rel'] else '✗'} {r['base_zone']}"
+            after = f"{'✓' if r['after_rel'] else '✗'} {r['after_zone']}"
+            print(f"{r['followup'][:37]:<38} {r['rewritten'][:43]:<44} {base:<11} {after:<11}")
+        fs = fu["summary"]
+        print("─" * 108)
+        print(f"Follow-up relevant: roh {fs['baseline_relevant']}/{fs['total']} → "
+              f"mit Rewrite {fs['rewrite_relevant']}/{fs['total']}")
     return 0
 
 

@@ -22,5 +22,17 @@
     "translated": "Quantum confinement",
     "model": "gemma2:2b",
     "saved_at": "2026-07-04 17:01:32"
+  },
+  "171cacec783da653": {
+    "original": "kannst du mir etwas über metaphysik erzählen",
+    "translated": "metaphysics",
+    "model": "gemma2:2b",
+    "saved_at": "2026-07-05 11:40:27"
+  },
+  "a2c4a9a154204125": {
+    "original": "kannst du mher auf Metaphysik eine Art \"Philosophie des A-Level-Chemie\" eingehen",
+    "translated": "Metaphysics of A-level Chemistry",
+    "model": "gemma2:2b",
+    "saved_at": "2026-07-05 11:51:52"
   }
 }

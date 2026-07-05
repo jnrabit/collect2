@@ -68,11 +68,15 @@ def is_code_task(query: str) -> bool:
 class OrchestratorAgent(BaseAgent):
     name = "orchestrator"
 
-    def __init__(self, bus, router, translator=None, decomposer=None):
+    def __init__(self, bus, router, translator=None, decomposer=None,
+                 rewrite_fn=None):
         super().__init__(bus)
         self.router = router
         self.translator = translator
         self.decomposer = decomposer
+        if rewrite_fn is None:
+            from collect.retrieval.rewriter import rewrite as rewrite_fn
+        self.rewrite_fn = rewrite_fn
 
     def subscriptions(self):
         return {"user_query": self.on_user_query}
@@ -94,14 +98,29 @@ class OrchestratorAgent(BaseAgent):
             self._dispatch_plan(query, cid, msg)
             return
 
-        # 1. Translate (Heuristik-gated, best-effort)
+        # 0. Follow-up-Rewrite (Gate-Heuristik + Historie, best-effort).
+        # Das Original bleibt als Fusion-Subquery erhalten (siehe unten).
+        history = msg.data.get("history") or []
+        rewritten_query = None
         effective = query
+        if history:
+            try:
+                rw = self.rewrite_fn(query, history)
+                if rw["applied"]:
+                    effective = rw["rewritten"]
+                    rewritten_query = rw["rewritten"]
+                    self.progress(cid, "rewritten", effective[:80])
+            except Exception as e:
+                self.log.warning("Rewrite fehlgeschlagen: %s", e)
+
+        # 1. Translate (Heuristik-gated, best-effort)
+        pre_translate = effective
         if self.translator:
             try:
-                effective = self.translator.translate(query)["translated"]
+                effective = self.translator.translate(effective)["translated"]
             except Exception as e:
                 self.log.warning("Translate fehlgeschlagen: %s", e)
-        if effective != query:
+        if effective != pre_translate:
             self.progress(cid, "translated", effective[:80])
 
         # 2. Route (Centroid)
@@ -116,12 +135,19 @@ class OrchestratorAgent(BaseAgent):
             except Exception as e:
                 self.log.warning("Decompose fehlgeschlagen: %s", e)
 
+        # Fusion-Sicherung: nach einem Rewrite läuft das ORIGINAL als
+        # zusätzliche Subquery mit — ein schlechtes Rewrite kann das
+        # Ergebnis so nie unter den Status quo drücken (RRF fusioniert).
+        if rewritten_query and query not in subqueries:
+            subqueries = subqueries + [query]
+
         # 4. Manifest: was der ResponseAgent erwarten darf
         expected = ["retrieval", "llm"]
         if route != ROUTE_GENERAL:
             expected.append("code_retrieval")
         self.publish("response_manifest", "response_manifest", {
             "query": query,
+            "rewritten_query": rewritten_query,
             "expected": expected,
             "deadline": settings.response_deadline,
             "route": route,

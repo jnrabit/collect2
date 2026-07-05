@@ -54,6 +54,7 @@ class ResponseAgent(BaseAgent):
         deadline = float(msg.data.get("deadline", 120.0))
         self._states[cid] = {
             "query": msg.data.get("query", ""),
+            "rewritten_query": msg.data.get("rewritten_query"),
             "expected": set(msg.data.get("expected", [])),
             "contribs": {},
             "reply_to": msg.reply_to or "user_response",
@@ -124,6 +125,8 @@ def synthesize(state: dict) -> tuple[str, dict]:
     expected = state["expected"]
     parts: list[str] = []
     meta: dict = {}
+    if state.get("rewritten_query"):
+        meta["rewritten_query"] = state["rewritten_query"]
 
     # 1. Plan-/Workflow-Sektion zuerst — werden nie unterdrückt
     planning = contribs.get("planning")
