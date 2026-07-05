@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0       # volle History → regression_guard --range gegen Base
+          submodules: recursive # ossifikat (public) — 4 Testdateien importieren es
 
       - uses: actions/setup-python@v5
         with:
@@ -25,7 +26,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,api]"
+          pip install -e ./ossifikat
 
       - name: doctor (fast gate)
         # Deterministischer Smoke-Check VOR dem Test-Lauf:
