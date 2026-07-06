@@ -1,6 +1,6 @@
 # collect2 · hótr̥ — System-Audit / Stand der Dinge
 
-**Stand:** 2026-07-05 · **Repo:** `~/collect2` (lokal, kein Remote) · **Branch:** `main`, 15 Commits
+**Stand:** 2026-07-06 · **Repo:** `~/collect2` + privates Remote `jnrabit/collect2` (CI grün) · **Branch:** `main`, 19 Commits
 **Zweck dieses Dokuments:** Vollständiger Überblick für eine neue Session/Instanz ohne Vorkontext.
 
 ---
@@ -27,10 +27,10 @@ neues Repo statt In-Place-Umbau · lokal-first (Ollama), Cloud später optional.
 
 | | |
 |---|---|
-| Eigener Code | ~5.100 LOC in `src/collect/` (größtes Modul < 260 LOC) |
-| Tests | **163 passed** (`pytest`), plus Integrationstests gegen echte Vaults |
+| Eigener Code | ~5.700 LOC in `src/collect/` (größtes Modul < 260 LOC) |
+| Tests | **196 passed** (`pytest`), plus Integrationstests gegen echte Vaults; CI grün (157 passed / 6 skipped ohne Daten) |
 | Agenten | 10 (ein Prozess, ein Bus-Thread pro Agent) |
-| Vaults | General 258.873 Docs (74 MB) · Code 1.469 Docs · Caches 416 MB, 384-dim |
+| Vaults | General 258.991 Docs (harvestbar) · Code 1.469 Docs · Caches ~416 MB, 384-dim |
 | Daten | `~/collect2/data/` (migriert, SHA256-verifiziert; Alt-Daten unberührt) |
 | Python | 3.12 (gepinnt — 3.14 brach protobuf im Alt-Stack), venv `.venv` |
 | Modelle | qwen2.5:7b (Chat/Synthese, GPU-only ~46 tok/s) · qwen2.5-coder:7b (Code-Workflow) · gemma2:2b (DE→EN) · qwen2.5:3b (Query-Zerlegung) |
@@ -66,9 +66,17 @@ Timeout-Heuristik, ein Embedding-Backend, Module < 400 LOC.
 - **Deterministischer Modus (default):** Thompson-Posterior-Mean statt Sampling,
   statische cosine-dominante Gewichte (0.8/0.05/0.1/0.05), Warp aus. Resonanz-Lern-Boost
   gesättigt + gecappt (nudgt, teleportiert nie über Zonen). Chaos-Modus per Flag.
-- **Pipeline:** Translate → Centroid-Routing (general/both/code) → Decompose
-  (Mehr-Aspekt) → Suche pro Teilfrage → RRF-Fusion → **lexikalisches Rerank**
-  (Query-Term-Überlappung, reorder-only) → Drei-Zonen-Verdikt.
+- **Pipeline:** [Follow-up-Rewrite bei referenziellen Folgefragen] → Translate →
+  Centroid-Routing (general/both/code) → Decompose (Mehr-Aspekt) → Suche pro
+  Teilfrage → RRF-Fusion → **lexikalisches Rerank** (Query-Term-Überlappung,
+  reorder-only) → Drei-Zonen-Verdikt.
+- **Follow-up-Rewrite:** deterministisches Gate (kurz + Pronomen/Deixis) →
+  qwen2.5:3b formt aus den letzten Turns eine eigenständige Frage; Original
+  läuft als Fusions-Subquery mit (nie schlechter als Status quo). Gemessen:
+  referenzielle Folgefragen 0/6 → 5/6 relevant.
+- **Harvest:** `collect-harvest wikipedia <topic> --limit N` — höflicher
+  MediaWiki-Adapter + sicherer Ingest (Qualität/Dedupe → Backup → tmp →
+  Reload-Verify → atomarer Move). HTTP/Netzwerk-Lücke damit geschlossen.
 - **Drei Zonen:** TRUST (≤50) volle Antwort · GRAUZONE (50–62) Antwort mit Warnhinweis ·
   FALLBACK (≥62) LLM unterdrückt (Halluzinations-Schutz). Verbürgte Fakten heben
   FALLBACK auf. Code-Vault-TRUST: 57.
@@ -127,10 +135,10 @@ Tasks (slugify) scheitern an 7B-Erwartungstreue → ehrlich rot, kein Commit.
 | Thema | Stand |
 |---|---|
 | 7B-Modellgrenze im Code-Workflow | string-exakte Tests inkonsistent; Hebel: größeres Coder-Modell, mehr Reparatur-Runden, Cloud-Fallback (DESIGN §2) |
-| Embedder-Relevanz | MiniLM verwechselt Wortfelder (TLS↔soziales Handshaking); Rerank mildert, Top-1 nicht immer ideal; HTTP-Thema fehlt im Vault |
+| Embedder-Relevanz | MiniLM verwechselt Wortfelder (TLS↔soziales Handshaking); Rerank mildert, Top-1 nicht immer ideal. HTTP-Lücke per Harvest geschlossen |
 | API ohne Auth | bewusst localhost-only; Härtung Pflicht vor Exposure |
-| Kein GitHub-Remote | CI nie gelaufen; Cutover (Alt-Stack stoppen) bewusst offen — User-Entscheidung |
-| Harvest fehlt | Vault eingefroren (keine neuen Dokumente); Harvester aus Vorgängern nicht portiert |
+| Cutover offen | Alt-Stack `~/collect` läuft parallel weiter — Stoppen/Archivieren ist User-Entscheidung |
+| Harvest v1 | nur Wikipedia-Adapter; ArXiv/OpenAlex/RFC als Ausbau. Kein Daemon/Scheduler (manueller Lauf) |
 | Idiom-System / Sandbox / validator2-Vollport | bewusst zurückgestellt (Anti-Scaffold-Regel); Consumer (Workflow) existiert jetzt |
 | Follow-up-Retrieval | Kontext nur in Synthese; kurze referenzielle Fragen retrieven schwach (Query-Rewrite wäre Ausbau) |
 
@@ -146,6 +154,8 @@ src/collect/
              embedding, router, zones, translator, decomposer, service
   grounding/ facts, triplets
   workflow/  context, briefing, planning, execution, verify, engine
+  harvest/   wikipedia, ingest, cli
+  retrieval/ … + rewriter (Follow-up-Query-Rewrite)
   web/chat.html
 scripts/   start|stop|status.sh, migrate_data.py, retrieval_benchmark.py
 deploy/    systemd-User-Units · ossifikat/ (Submodule) · tests/ (163)
