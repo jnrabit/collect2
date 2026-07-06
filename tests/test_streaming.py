@@ -126,3 +126,77 @@ def test_synthesize_passes_token_stats():
     })
     assert meta["tokens"] == 210
     assert meta["tok_per_s"] == 46.9
+
+
+# ── Stop-Token / Anti-Runaway (Fix: ChatML-Marker-Leak) ──────────────────
+
+def test_sanitize_completion_cuts_at_marker():
+    assert ollama.sanitize_completion("Antwort.<|im_start|>user\nblah") == "Antwort."
+    assert ollama.sanitize_completion("Text<|im_end|>rest") == "Text"
+    assert ollama.sanitize_completion("  sauber  ") == "sauber"
+    assert ollama.sanitize_completion("kein marker") == "kein marker"
+
+
+def test_first_marker_index_finds_earliest():
+    assert ollama._first_marker_index("a<|im_end|>b<|im_start|>") == 1
+    assert ollama._first_marker_index("keiner") == -1
+
+
+def test_streaming_truncates_at_chatml_marker():
+    # Der reale Bug: Modell läuft über die Turn-Grenze, leakt Template-Token
+    chunks = [
+        {"response": "Die Antwort ist fertig."},
+        {"response": "<|im_start|>user"},
+        {"response": "\nEntschuldigung, halluzinierte Runde"},
+        {"done": True, "eval_count": 5, "eval_duration": 100_000_000},
+    ]
+    seen = []
+    with mock.patch.object(ollama.requests, "post",
+                           return_value=FakeStreamResponse(chunks)):
+        text, _ = ollama.generate_streaming("p", on_token=seen.append)
+    assert text == "Die Antwort ist fertig."
+    assert "<|im_start|>" not in "".join(seen)      # Marker nie an den Client
+    assert "halluzinierte" not in text              # Fake-Runde abgeschnitten
+
+
+def test_streaming_preserves_trailing_whitespace_midstream():
+    # Regression: sanitize darf mid-stream KEINE Deltas fälschlich kürzen
+    chunks = [{"response": "Wort "}, {"response": "zwei"}, {"done": True}]
+    seen = []
+    with mock.patch.object(ollama.requests, "post",
+                           return_value=FakeStreamResponse(chunks)):
+        text, _ = ollama.generate_streaming("p", on_token=seen.append)
+    assert seen == ["Wort ", "zwei"]
+    assert text == "Wort zwei"
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+        self.request_json = None
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+def test_generate_sets_stop_and_num_predict():
+    captured = {}
+
+    def fake_post(url, json=None, **kw):
+        captured.update(json)
+        return FakeResponse({"response": "ok"})
+
+    with mock.patch.object(ollama.requests, "post", side_effect=fake_post):
+        ollama.generate("frage")
+    opts = captured["options"]
+    assert opts["stop"] == ollama._STOP_SEQUENCES
+    assert opts["num_predict"] == ollama._NUM_PREDICT_CAP
+
+
+def test_generate_sanitizes_output():
+    with mock.patch.object(ollama.requests, "post",
+                           return_value=FakeResponse({"response": "Fertig.<|im_end|>müll"})):
+        assert ollama.generate("frage") == "Fertig."

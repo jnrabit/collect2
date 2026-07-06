@@ -16,6 +16,41 @@ from collect.config import settings
 
 logger = logging.getLogger(__name__)
 
+# ChatML-Turn-Marker (qwen/Yi/…): das lokale qwen2.5-Modelfile deklariert KEINE
+# PARAMETER stop → ohne explizites stop läuft die Generierung über die Turn-
+# Grenze hinaus und leakt `<|im_start|>user`, halluzinierte Fake-Runden und den
+# Prompt-Schwanz. Wir setzen stop selbst; sanitize_completion ist Defense-in-Depth.
+_STOP_SEQUENCES = ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
+_NUM_PREDICT_CAP = 1024  # Sicherheitsnetz gegen Weglaufen (Antworten sind kürzer)
+
+
+def _base_options(temperature: float) -> dict:
+    return {
+        "temperature": temperature,
+        "stop": _STOP_SEQUENCES,
+        "num_predict": _NUM_PREDICT_CAP,
+    }
+
+
+_CHATML_MARKERS = ("<|im_start|>", "<|im_end|>", "<|endoftext|>")
+
+
+def _first_marker_index(text: str) -> int:
+    """Position des frühesten ChatML-Markers, sonst -1."""
+    idx = -1
+    for marker in _CHATML_MARKERS:
+        i = text.find(marker)
+        if i != -1:
+            idx = i if idx == -1 else min(idx, i)
+    return idx
+
+
+def sanitize_completion(text: str) -> str:
+    """Schneidet ab dem ersten ChatML-Marker ab + trimmt Rand-Whitespace.
+    Für Einmal-Antworten (nicht streamend — dort mid-stream-Whitespace-neutral)."""
+    idx = _first_marker_index(text)
+    return (text if idx == -1 else text[:idx]).strip()
+
 
 def generate(prompt: str, system: str = "", model: Optional[str] = None,
              timeout: Optional[float] = None, temperature: float = 0.1,
@@ -27,19 +62,21 @@ def generate(prompt: str, system: str = "", model: Optional[str] = None,
         "stream": False,
         "think": False,
         "keep_alive": "30m",
-        "options": {"temperature": temperature},
+        "options": _base_options(temperature),
     }
     if system:
         payload["system"] = system
     if fmt:
-        payload["format"] = fmt
+        # JSON-Modus: Marker-stop stört strukturierte Ausgaben nicht, aber
+        # num_predict könnte lange JSONs abschneiden → hier großzügiger.
+        payload["options"] = {"temperature": temperature, "num_predict": 2048}
     resp = requests.post(
         f"{settings.ollama_url}/api/generate",
         json=payload,
         timeout=timeout or settings.llm_timeout,
     )
     resp.raise_for_status()
-    return resp.json().get("response", "")
+    return sanitize_completion(resp.json().get("response", ""))
 
 
 def generate_streaming(prompt: str, system: str = "", model: Optional[str] = None,
@@ -59,13 +96,15 @@ def generate_streaming(prompt: str, system: str = "", model: Optional[str] = Non
         "stream": True,
         "think": False,
         "keep_alive": "30m",
-        "options": {"temperature": temperature},
+        "options": _base_options(temperature),
     }
     if system:
         payload["system"] = system
 
     parts: list[str] = []
+    emitted_len = 0  # Länge der bereits ausgegebenen Zeichen (für Marker-Check)
     stats: dict = {}
+    stopped = False  # ChatML-Marker gesehen → weitere Deltas verwerfen
     with requests.post(f"{settings.ollama_url}/api/generate", json=payload,
                        stream=True, timeout=timeout or settings.llm_timeout) as resp:
         resp.raise_for_status()
@@ -77,10 +116,21 @@ def generate_streaming(prompt: str, system: str = "", model: Optional[str] = Non
             except ValueError:
                 continue
             delta = chunk.get("response", "")
-            if delta:
-                parts.append(delta)
-                if on_token is not None:
-                    on_token(delta)
+            if delta and not stopped:
+                combined = "".join(parts) + delta
+                mi = _first_marker_index(combined)
+                if mi != -1:
+                    # Marker (ggf. über Chunk-Grenze zusammengesetzt) → bis dahin
+                    # ausgeben, dann Schluss. Kein rstrip mid-stream.
+                    keep = combined[emitted_len:mi]
+                    stopped = True
+                else:
+                    keep = delta
+                if keep:
+                    parts.append(keep)
+                    emitted_len += len(keep)
+                    if on_token is not None:
+                        on_token(keep)
             if chunk.get("done"):
                 ec = chunk.get("eval_count")
                 ed = chunk.get("eval_duration")
@@ -88,4 +138,4 @@ def generate_streaming(prompt: str, system: str = "", model: Optional[str] = Non
                     "eval_count": ec,
                     "tok_per_s": round(ec / (ed / 1e9), 1) if ec and ed else None,
                 }
-    return "".join(parts), stats
+    return "".join(parts).strip(), stats
