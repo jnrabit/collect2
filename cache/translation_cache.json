@@ -34,5 +34,11 @@
     "translated": "Metaphysics of A-level Chemistry",
     "model": "gemma2:2b",
     "saved_at": "2026-07-05 11:51:52"
+  },
+  "08a9f480639b91cb": {
+    "original": "kannst du mir etwas über quantenverschränkung erzählen",
+    "translated": "can you tell me about quantum entanglement",
+    "model": "qwen2.5:7b",
+    "saved_at": "2026-07-06 20:29:57"
   }
 }

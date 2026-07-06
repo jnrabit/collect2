@@ -51,7 +51,9 @@ class QueryTranslator:
 
     def __init__(self, model: Optional[str] = None, timeout: float = 15.0,
                  cache_file: Optional[Path] = None, enable_cache: bool = True):
-        self.model = model or settings.translate_model
+        # Leerer translate_model → Generalist (main_model); kleine Modelle
+        # übersetzen Fachbegriffe falsch und korrumpieren das Retrieval.
+        self.model = model or settings.translate_model or settings.main_model
         self.generate_url = f"{settings.ollama_url}/api/generate"
         self.timeout = timeout
         self.enable_cache = enable_cache

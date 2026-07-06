@@ -170,8 +170,11 @@ class CollectSettings(BaseSettings):
         description="Code-Modell; default = main_model, damit nur EIN Modell im VRAM liegt",
     )
     translate_model: str = Field(
-        default="gemma2:2b",
-        description="Kleines Modell für DE→EN-Query-Übersetzung (Pre-Retrieval)",
+        default="",
+        description="DE→EN-Query-Übersetzung (Pre-Retrieval); leer = main_model. "
+                    "Kleine Modelle (gemma2:2b/qwen2.5:3b) übersetzen Fachbegriffe "
+                    "falsch ('Quantenverschränkung'→'Quantum confinement') und "
+                    "korrumpieren das Retrieval unbemerkt — daher der Generalist.",
     )
     decompose_model: str = Field(
         default="qwen2.5:3b",
