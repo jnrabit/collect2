@@ -51,6 +51,10 @@ _CORE_MODULES = [
     # Grounding & Lernen (Phase 4)
     "collect.grounding",
     "collect.validation",
+    # Harvest (Phase C)
+    "collect.harvest",
+    "collect.harvest.wikipedia",
+    "collect.harvest.ingest",
 ]
 
 

@@ -39,6 +39,7 @@ collect-agents = "collect.agents.runner:main"
 collect-ask = "collect.client:main"
 collect-repl = "collect.repl:main"
 collect-api = "collect.api:main"
+collect-harvest = "collect.harvest.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

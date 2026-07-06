@@ -28,6 +28,8 @@ BENCH = [
     ("transformer neural network attention mechanism", "*", True, ["attention", "transformer"]),
     ("What is quantum entanglement?", "*", True, ["entangle", "quantum"]),
     ("HTTP request methods GET POST", "*", True, ["http"]),
+    ("How does an HTTP request and response work?", "*", True, ["http", "request", "response"]),
+    ("What is HTTPS and TLS encryption?", "*", True, ["https", "tls", "encrypt", "secur"]),
     ("Was ist der Unterschied zwischen TCP und UDP?", "*", True, ["tcp", "udp", "transport"]),
     ("Python global interpreter lock", "*", True, ["python", "gil", "interpreter", "thread"]),
     ("xyzzy plugh frobnicate quux blorp", "*", False, []),
