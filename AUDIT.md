@@ -122,8 +122,13 @@ Tasks (slugify) scheitern an 7B-Erwartungstreue → ehrlich rot, kein Commit.
   Opt-in:** Nicht-localhost-Bind ohne Token → Preflight verweigert den Start.
   **Vor echter Exposure noch nötig:** TLS terminiert der Reverse-Proxy (nicht
   die App); optional CSP für die CDN-Skripte (KaTeX/marked).
-- **Betrieb:** `scripts/start.sh [--api]` (Preflight Redis/Ollama, wartet auf online),
-  `stop.sh`, `status.sh` (Heartbeat-Hash in Redis); systemd-User-Units in `deploy/`.
+- **Betrieb:** collect2 läuft seit dem **Cutover (2026-07-06) als systemd-User-
+  Dienst** (`collect-agents` + `collect-api`, `enabled`, `Linger=yes` → boot-fest,
+  einziges aktives System). Handbetrieb-Skripte (`start.sh [--api]`/`stop.sh`/
+  `status.sh`) bleiben für Ad-hoc-Läufe; Unit-Vorlagen in `deploy/`, installiert
+  in `~/.config/systemd/user/`. Alt-`~/collect` (`framework-grpc`) und vibelike
+  (`hotr-*`) sind disabled+inactive (System-Units, `sudo`), Verzeichnisse
+  unangetastet — Rückweg per Service-Umschalten (kein Abriss).
   Konfiguration: `.env` (Prefix `COLLECT_`, alle Optionen in `.env.example`);
   aktuell gesetzt: `COLLECT_DATA_DIR`, `COLLECT_CODE_MODEL=qwen2.5-coder:7b`.
 
