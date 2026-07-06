@@ -128,8 +128,35 @@ class CollectSettings(BaseSettings):
 
     # ── REST-API ────────────────────────────────────────────────────────
     api_host: str = Field(default="127.0.0.1",
-                          description="Nur localhost — kein Auth-Layer (Phase 5+)")
+                          description="Bind-Adresse; 127.0.0.1 = nur localhost. "
+                                      "Nicht-localhost-Bind erfordert api_token "
+                                      "(Preflight verweigert sonst den Start).")
     api_port: int = 8767  # 8766 belegt das Alt-System
+    api_token: str = Field(
+        default="",
+        description="Bearer-Token/API-Key. Leer = offen (nur mit localhost-Bind "
+                    "erlaubt). Gesetzt = Auth auf teuren/sensiblen Endpoints.",
+    )
+    api_cors_origins: str = Field(
+        default="",
+        description="Komma-separierte CORS-Allowlist. Leer = nur die eigene "
+                    "localhost-Origin (http://127.0.0.1:PORT + http://localhost:PORT).",
+    )
+    api_rate_expensive: int = Field(
+        default=20, description="teure Endpoints (query/ws): Aufrufe pro Minute/Key")
+    api_rate_light: int = Field(
+        default=120, description="leichte Endpoints (facts): Aufrufe pro Minute/Key")
+    api_max_body_bytes: int = Field(
+        default=65536, description="Body-Cap gegen Riesen-Payloads (413 darüber)")
+
+    @property
+    def api_default_origins(self) -> list[str]:
+        return [f"http://127.0.0.1:{self.api_port}",
+                f"http://localhost:{self.api_port}"]
+
+    @property
+    def api_is_localhost(self) -> bool:
+        return self.api_host in ("127.0.0.1", "::1", "localhost")
 
     # ── Modelle (lokal-first, Ollama) ───────────────────────────────────
     ollama_host: str = "localhost"

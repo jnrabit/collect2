@@ -112,7 +112,16 @@ Tasks (slugify) scheitern an 7B-Erwartungstreue → ehrlich rot, kein Commit.
   Markdown (marked+DOMPurify) + LaTeX (KaTeX, mathe-geschützt vorm Markdown-Parser),
   Gesprächskontext pro Verbindung (letzte 5 Turns, nur in die Synthese).
 - **CLIs:** `collect-agents` (Stack) · `collect-ask` · `collect-repl` (Fragen,
-  `/status`, `/review`, `/facts`) · `collect-api` · `collect-doctor` · `collect-guard`.
+  `/status`, `/review`, `/facts`) · `collect-api` · `collect-harvest` ·
+  `collect-doctor` · `collect-guard`.
+- **API-Härtung** (`api_security.py`): Default localhost + offen (Zero-Config);
+  mit `COLLECT_API_TOKEN` wird Bearer/`?token=`-Auth auf `/api/query`,
+  `/api/facts`, `/ws/chat` erzwungen (`/health`, `/chat` bleiben öffentlich).
+  In-Process-Rate-Limit (2 Tiers, 429+Retry-After), CORS-Allowlist,
+  Security-Header, Body-Cap, generische Fehler (kein Leak). **Exposure ist
+  Opt-in:** Nicht-localhost-Bind ohne Token → Preflight verweigert den Start.
+  **Vor echter Exposure noch nötig:** TLS terminiert der Reverse-Proxy (nicht
+  die App); optional CSP für die CDN-Skripte (KaTeX/marked).
 - **Betrieb:** `scripts/start.sh [--api]` (Preflight Redis/Ollama, wartet auf online),
   `stop.sh`, `status.sh` (Heartbeat-Hash in Redis); systemd-User-Units in `deploy/`.
   Konfiguration: `.env` (Prefix `COLLECT_`, alle Optionen in `.env.example`);
@@ -136,7 +145,7 @@ Tasks (slugify) scheitern an 7B-Erwartungstreue → ehrlich rot, kein Commit.
 |---|---|
 | 7B-Modellgrenze im Code-Workflow | string-exakte Tests inkonsistent; Hebel: größeres Coder-Modell, mehr Reparatur-Runden, Cloud-Fallback (DESIGN §2) |
 | Embedder-Relevanz | MiniLM verwechselt Wortfelder (TLS↔soziales Handshaking); Rerank mildert, Top-1 nicht immer ideal. HTTP-Lücke per Harvest geschlossen |
-| API ohne Auth | bewusst localhost-only; Härtung Pflicht vor Exposure |
+| API-Exposure | Schutzschicht steht (Token/Rate/CORS/Header/Preflight); vor echter Exposure noch: TLS am Reverse-Proxy, optional CSP |
 | Cutover offen | Alt-Stack `~/collect` läuft parallel weiter — Stoppen/Archivieren ist User-Entscheidung |
 | Harvest v1 | nur Wikipedia-Adapter; ArXiv/OpenAlex/RFC als Ausbau. Kein Daemon/Scheduler (manueller Lauf) |
 | Idiom-System / Sandbox / validator2-Vollport | bewusst zurückgestellt (Anti-Scaffold-Regel); Consumer (Workflow) existiert jetzt |

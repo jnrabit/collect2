@@ -1,14 +1,15 @@
 """REST-API + Web-Chat — dünnes FastAPI-Gateway vor dem Agenten-Stack.
 
-Nur localhost (settings.api_host), kein Auth-Layer — Härtung (Token,
-Capabilities wie vibelikes web/auth.py) kommt vor jedem breiteren Exposure.
+Default: localhost-Bind, offen (Zero-Config). Härtung in api_security.py —
+mit COLLECT_API_TOKEN wird Auth erzwungen; Nicht-localhost-Bind ohne Token
+verweigert der Preflight. TLS terminiert ein Reverse-Proxy, nicht die App.
 
-    collect-api                      # startet uvicorn
-    GET  /chat                       # Web-Chat (eine HTML-Seite, kein Build)
-    WS   /ws/chat                    # Query rein, Progress+Antwort raus
-    GET  /api/health                 # Redis + Agenten-Heartbeats
-    POST /api/query {"query": "…"}   # synchron, blockiert bis Antwort
-    GET  /api/facts                  # verbürgte Fakten
+    collect-api                      # startet uvicorn (mit Exposure-Preflight)
+    GET  /chat                       # Web-Chat — öffentlich (Bootstrap-Shell)
+    WS   /ws/chat                    # Query rein; Auth via ?token= (teuer)
+    GET  /api/health                 # öffentlicher Liveness (Status + Anzahl)
+    POST /api/query {"query": "…"}   # Auth (Bearer), synchron (teuer)
+    GET  /api/facts                  # Auth (Bearer), verbürgte Fakten (leicht)
 """
 
 from __future__ import annotations
@@ -38,10 +39,13 @@ class QueryRequest(BaseModel):
 
 
 def create_app():
-    from fastapi import FastAPI, HTTPException, WebSocketDisconnect
+    from fastapi import Depends, FastAPI, HTTPException, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, RedirectResponse
 
+    from collect.api_security import add_security, require_auth, ws_authorized
+
     app = FastAPI(title=settings.display_name, version="0.1.0")
+    add_security(app)
 
     @app.get("/")
     def root():
@@ -60,6 +64,9 @@ def create_app():
         Gesprächskontext lebt pro Verbindung (Seite neu laden = neues Gespräch)."""
         from collect.client import stream
 
+        if not ws_authorized(ws):
+            await ws.close(code=1008)  # Policy Violation (Auth/Rate)
+            return
         await ws.accept()
         history: list[dict] = []
         try:
@@ -89,25 +96,25 @@ def create_app():
 
     @app.get("/api/health")
     def health():
+        # Öffentlicher Liveness-Endpoint — nur Status + Anzahl (kein
+        # Per-Agent-Detail nach außen, Leak-Hygiene).
         from collect.status import get_agent_status
-        agents = get_agent_status()
-        alive = sum(1 for s in agents.values() if s["alive"])
+        alive = sum(1 for s in get_agent_status().values() if s["alive"])
         return {
             "status": "ok" if alive >= 8 else ("degraded" if alive else "down"),
             "agents_alive": alive,
-            "agents": agents,
         }
 
     @app.post("/api/query")
-    def query(req: QueryRequest):
+    def query(req: QueryRequest, _auth=Depends(require_auth("expensive"))):
         from collect.client import ask
         result = ask(req.query, timeout=req.timeout)
         if result.get("meta", {}).get("timeout"):
-            raise HTTPException(status_code=504, detail=result.get("text"))
+            raise HTTPException(status_code=504, detail="Query timed out")
         return result
 
     @app.get("/api/facts")
-    def facts():
+    def facts(_auth=Depends(require_auth("light"))):
         from pathlib import Path
         db = Path(settings.ossifikat_db)
         if not db.exists():
@@ -129,6 +136,14 @@ def create_app():
 
 def main() -> int:
     import uvicorn
+
+    from collect.api_security import exposure_preflight, token_configured
+    exposure_preflight()  # Nicht-localhost ohne Token → RuntimeError vor Bind
+    if not settings.api_is_localhost:
+        print(f"⚠ API bindet an {settings.api_host} (exponiert) — Token aktiv.")
+    elif not token_configured():
+        print("API offen auf localhost (kein Token). Für Exposure: "
+              "COLLECT_API_TOKEN setzen, siehe .env.example.")
     uvicorn.run(create_app(), host=settings.api_host, port=settings.api_port,
                 log_level="info")
     return 0

@@ -149,13 +149,29 @@ function renderMath(node) {
   } catch (e) { /* Rohtext bleibt lesbar */ }
 }
 
+// Token-Handling: einmalig via ?token=… geseedet → localStorage, danach aus
+// der URL entfernt. Ohne Token (localhost-Default) funktioniert alles wie
+// bisher. Kein Token im HTML hartkodiert.
+(function seedToken() {
+  const p = new URLSearchParams(location.search);
+  if (p.get("token")) {
+    localStorage.setItem("collect2_token", p.get("token"));
+    history.replaceState(null, "", location.pathname);
+  }
+})();
+function apiToken() { return localStorage.getItem("collect2_token") || ""; }
+
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws/chat`);
+  const tok = apiToken();
+  const q = tok ? `?token=${encodeURIComponent(tok)}` : "";
+  ws = new WebSocket(`ws://${location.host}/ws/chat${q}`);
   ws.onopen = () => { conn.textContent = "🟢 verbunden"; setBusy(false); };
-  ws.onclose = () => {
-    conn.textContent = "🔴 getrennt — neuer Versuch in 3s";
+  ws.onclose = (ev) => {
+    conn.textContent = ev.code === 1008
+      ? "🔒 abgelehnt — Token nötig? (?token=… anhängen)"
+      : "🔴 getrennt — neuer Versuch in 3s";
     setBusy(true);
-    setTimeout(connect, 3000);
+    if (ev.code !== 1008) setTimeout(connect, 3000);
   };
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
