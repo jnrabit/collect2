@@ -59,7 +59,11 @@ def stream(query: str, timeout: float | None = None, history: list | None = None
         yield ("answer", {"text": f"⚠️ Timeout nach {timeout:.0f}s — keine Antwort.",
                           "meta": {"timeout": True}})
     finally:
-        pubsub.close()
+        # pubsub UND Client schließen — sonst leakt pro Query ein Connection-Pool
+        try:
+            pubsub.close()
+        finally:
+            r.close()
 
 
 def ask(query: str, timeout: float | None = None, show_progress: bool = False,

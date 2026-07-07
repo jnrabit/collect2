@@ -67,8 +67,10 @@ def generate(prompt: str, system: str = "", model: Optional[str] = None,
     if system:
         payload["system"] = system
     if fmt:
-        # JSON-Modus: Marker-stop stört strukturierte Ausgaben nicht, aber
-        # num_predict könnte lange JSONs abschneiden → hier großzügiger.
+        # JSON-Modus: BEWUSST ohne stop-Sequenzen (die ChatML-Marker kommen in
+        # validem JSON nicht vor, und ein stop mitten im JSON würde es
+        # zerreißen) + höheres num_predict (2048), da lange JSONs sonst
+        # abgeschnitten würden. Ollamas format-Grammar erzwingt den Abschluss.
         payload["options"] = {"temperature": temperature, "num_predict": 2048}
     resp = requests.post(
         f"{settings.ollama_url}/api/generate",
@@ -130,7 +132,14 @@ def generate_streaming(prompt: str, system: str = "", model: Optional[str] = Non
                     parts.append(keep)
                     emitted_len += len(keep)
                     if on_token is not None:
-                        on_token(keep)
+                        # Callback-Fehler (z.B. transienter Bus-/Publish-Fehler)
+                        # darf die Generierung nicht abbrechen — sonst ist der
+                        # ganze bereits berechnete Prompt verschwendet.
+                        try:
+                            on_token(keep)
+                        except Exception:
+                            logger.warning("on_token-Callback fehlgeschlagen",
+                                           exc_info=True)
             if chunk.get("done"):
                 ec = chunk.get("eval_count")
                 ed = chunk.get("eval_duration")

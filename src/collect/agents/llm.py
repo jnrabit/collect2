@@ -9,6 +9,7 @@ der ResponseAgent unterdrückt die Antwort ohnehin).
 
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional
 
 from collect.agents.base import BaseAgent
@@ -40,8 +41,10 @@ class LLMAgent(BaseAgent):
         self.grounder = grounder
         self._pending: dict[str, dict] = {}  # cid → {query, needs, contribs}
         # Beiträge, die VOR dem llm_request eintreffen (Race: Retrieval kann
-        # schneller sein als die Zustellung des Requests) — begrenzt gepuffert.
+        # schneller sein als die Zustellung des Requests) — begrenzt gepuffert,
+        # mit Zeitstempel: verwaiste cids (Request kam nie) altern raus.
         self._early: dict[str, dict] = {}
+        self._early_ts: dict[str, float] = {}
 
     def subscriptions(self):
         return {
@@ -50,8 +53,12 @@ class LLMAgent(BaseAgent):
             "code_retrieval_response": self.on_contribution("code_retrieval"),
         }
 
+    _EARLY_TTL = 120.0  # Sek.: verwaiste Early-Beiträge (Request kam nie) verwerfen
+    _EARLY_MAX = 256
+
     def on_request(self, msg: Message) -> None:
         cid = msg.correlation_id
+        self._early_ts.pop(cid, None)
         self._pending[cid] = {
             "query": msg.data.get("original_query") or msg.data.get("query", ""),
             "effective": msg.data.get("query", ""),
@@ -61,6 +68,17 @@ class LLMAgent(BaseAgent):
         }
         self._maybe_generate(cid)
 
+    def _evict_early(self) -> None:
+        """Abgelaufene (TTL) und überzählige (FIFO) Early-Einträge verwerfen."""
+        now = time.monotonic()
+        for cid in [c for c, ts in self._early_ts.items() if now - ts > self._EARLY_TTL]:
+            self._early.pop(cid, None)
+            self._early_ts.pop(cid, None)
+        while len(self._early) > self._EARLY_MAX:
+            oldest = next(iter(self._early))
+            self._early.pop(oldest, None)
+            self._early_ts.pop(oldest, None)
+
     def on_contribution(self, kind: str):
         def handler(msg: Message) -> None:
             cid = msg.correlation_id
@@ -68,8 +86,8 @@ class LLMAgent(BaseAgent):
             if state is None:
                 # Request (noch) nicht da — puffern statt verlieren
                 self._early.setdefault(cid, {})[kind] = msg.data
-                while len(self._early) > 256:
-                    self._early.pop(next(iter(self._early)))
+                self._early_ts.setdefault(cid, time.monotonic())
+                self._evict_early()
                 return
             state["contribs"][kind] = msg.data
             self._maybe_generate(cid)
@@ -114,30 +132,27 @@ class LLMAgent(BaseAgent):
                          {"content": "", "skipped": False, "error": str(e),
                           "facts_used": len(facts)}, cid)
 
-    # Interim-Batching: pro Ollama-Chunk (≈1 Token) publizieren würde den Bus
-    # fluten; gesammelt wird bis ~80 Zeichen oder 150ms.
-    _FLUSH_CHARS = 80
-    _FLUSH_SECS = 0.15
-
     def _generate_streamed(self, cid: str, prompt: str) -> tuple[str, dict]:
-        import time as _time
-
+        # Interim-Batching: pro Ollama-Chunk (≈1 Token) publizieren würde den
+        # Bus fluten; gesammelt wird bis flush_chars Zeichen oder flush_secs.
+        flush_chars = settings.llm_flush_chars
+        flush_secs = settings.llm_flush_secs
         buf: list[str] = []
         tokens = [0]
-        last_flush = [_time.monotonic()]
+        last_flush = [time.monotonic()]
 
         def flush():
             if buf:
                 self.publish("llm_interim", "llm_interim",
                              {"delta": "".join(buf), "tokens": tokens[0]}, cid)
                 buf.clear()
-                last_flush[0] = _time.monotonic()
+                last_flush[0] = time.monotonic()
 
         def on_token(delta: str):
             buf.append(delta)
             tokens[0] += 1
-            if (sum(len(x) for x in buf) >= self._FLUSH_CHARS
-                    or _time.monotonic() - last_flush[0] >= self._FLUSH_SECS):
+            if (sum(len(x) for x in buf) >= flush_chars
+                    or time.monotonic() - last_flush[0] >= flush_secs):
                 flush()
 
         try:

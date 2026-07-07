@@ -119,7 +119,11 @@ def create_app():
         db = Path(settings.ossifikat_db)
         if not db.exists():
             return {"facts": []}
-        from ossifikat.store import OssifikatStore
+        try:
+            from ossifikat.store import OssifikatStore
+        except ImportError:
+            # Submodul nicht initialisiert → leere Liste statt 500
+            return {"facts": [], "note": "ossifikat submodule not installed"}
         store = OssifikatStore(str(db))
         try:
             rows = store.query()

@@ -72,13 +72,17 @@ def build_agents(bus, generate_fn=None):
 def _start_heartbeat(bus, agents) -> threading.Thread:
     from collect.status import write_heartbeat
 
+    # Status-Hash nur bei einem Redis-Bus (InMemoryBus hat kein .redis)
+    redis_client = getattr(bus, "redis", None)
+
     def loop():
         while True:
             for agent in agents:
                 bus.publish("heartbeat", Message(
                     type="heartbeat", data={"agent": agent.name, "ts": time.time()},
                     source=agent.name))
-                write_heartbeat(bus.redis, agent.name)
+                if redis_client is not None:
+                    write_heartbeat(redis_client, agent.name)
             time.sleep(settings.heartbeat_interval)
 
     t = threading.Thread(target=loop, name="heartbeat", daemon=True)

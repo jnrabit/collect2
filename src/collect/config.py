@@ -182,6 +182,9 @@ class CollectSettings(BaseSettings):
     )
     translate_enabled: bool = True
     decompose_enabled: bool = True
+    # Interim-Streaming-Batching (Bus-Last vs. gefühlte Latenz)
+    llm_flush_chars: int = 80
+    llm_flush_secs: float = 0.15
     rewrite_enabled: bool = Field(
         default=True,
         description="Referenzielle Folgefragen vor dem Retrieval zu "

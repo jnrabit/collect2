@@ -143,9 +143,14 @@ def repair(ctx, generate, progress=None) -> bool:
     if not written:
         return False
 
-    files_block = "\n\n".join(
-        f"--- {p} ---\n{(repo / p).read_text(encoding='utf-8', errors='replace')[:2500]}"
-        for p in written)
+    def _safe_read(rel: str) -> str:
+        # Datei könnte zwischen Write und Repair verschwinden → nicht crashen
+        try:
+            return (repo / rel).read_text(encoding="utf-8", errors="replace")[:2500]
+        except OSError as e:
+            return f"(nicht lesbar: {e})"
+
+    files_block = "\n\n".join(f"--- {p} ---\n{_safe_read(p)}" for p in written)
     try:
         raw = generate(REPAIR_PROMPT.format(
             task=ctx.task, failure=ctx.verify.get("output", "")[:1500],

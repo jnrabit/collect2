@@ -41,7 +41,10 @@ class Message:
     timestamp: float = field(default_factory=time.time)
 
     def to_json(self) -> str:
-        return json.dumps(self.__dict__, ensure_ascii=False)
+        # default=str: Felder sind heute str|dict|float, aber ein versehentlich
+        # eingeschleustes Path/datetime würde die Serialisierung sonst hart
+        # brechen — lieber str-kodieren als den Publish crashen lassen.
+        return json.dumps(self.__dict__, ensure_ascii=False, default=str)
 
     @classmethod
     def from_json(cls, raw: str) -> "Message":

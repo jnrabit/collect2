@@ -13,8 +13,11 @@ grenzen, die dort fehlten:
 from __future__ import annotations
 
 import ast
+import shlex
 import subprocess
 from pathlib import Path
+
+MAX_READ_BYTES = 5_000_000  # read: liest max. 5 MB (Schutz gg. Riesen-Datei/Symlink)
 
 from collect.agents.base import BaseAgent
 from collect.bus import Message
@@ -52,7 +55,12 @@ def execute_action(action: str) -> str:
             raise StepError(f"read außerhalb erlaubter Wurzeln: {arg}")
         if not p.is_file():
             raise StepError(f"Datei nicht gefunden: {arg}")
-        text = p.read_text(encoding="utf-8", errors="replace")
+        # Größe VOR dem Lesen prüfen — ein Symlink auf /dev/zero oder eine
+        # riesige Datei innerhalb der read_roots würde sonst den RAM füllen.
+        if p.stat().st_size > MAX_READ_BYTES:
+            raise StepError(f"Datei zu groß ({p.stat().st_size} > {MAX_READ_BYTES} B): {arg}")
+        with open(p, encoding="utf-8", errors="replace") as f:
+            text = f.read(MAX_READ_BYTES)
         return text[:2000] + ("…" if len(text) > 2000 else "")
 
     if head == "write":
@@ -82,7 +90,14 @@ def execute_action(action: str) -> str:
     if head == "execute":
         if not settings.executor_allow_execute:
             raise StepError("execute: deaktiviert (COLLECT_EXECUTOR_ALLOW_EXECUTE=true zum Aktivieren)")
-        parts = arg.split()
+        # shlex.split respektiert Quotes ('foo "bar baz"' → 2 statt 3 Args);
+        # kein shell=True → keine Shell-Injection, nur korrektes Arg-Parsing.
+        try:
+            parts = shlex.split(arg)
+        except ValueError as e:
+            raise StepError(f"Ungültige Argumente: {e}") from e
+        if not parts:
+            raise StepError("execute: kein Befehl angegeben")
         r = subprocess.run(parts, capture_output=True, text=True,
                            timeout=settings.step_timeout, cwd=str(workspace))
         out = (r.stdout + r.stderr).strip()
