@@ -15,12 +15,14 @@ from collect.bus import Message, new_id
 from collect.config import settings
 
 
-def stream(query: str, timeout: float | None = None, history: list | None = None):
+def stream(query: str, timeout: float | None = None, history: list | None = None,
+           session_id: str | None = None):
     """Generator: yieldet ("progress", data)-Events und final genau ein
     ("answer", data). Gemeinsamer Kern für CLI (ask) und Web-Chat (WebSocket).
 
     history: optionale Liste von {"q": …, "a": …}-Paaren (die letzten Turns);
-    fließt nur in die LLM-Synthese, nicht ins Retrieval."""
+    fließt nur in die LLM-Synthese, nicht ins Retrieval.
+    session_id: persistente Session-ID für Langzeit-Kontext."""
     import redis as redis_lib
 
     timeout = timeout or settings.query_timeout
@@ -34,8 +36,11 @@ def stream(query: str, timeout: float | None = None, history: list | None = None
     pubsub.subscribe(f"{prefix}{reply_channel}", f"{prefix}progress",
                      f"{prefix}llm_interim")
     try:
+        data = {"query": query, "history": history or []}
+        if session_id:
+            data["session_id"] = session_id
         r.publish(f"{prefix}user_query", Message(
-            type="user_query", data={"query": query, "history": history or []},
+            type="user_query", data=data,
             correlation_id=cid, reply_to=reply_channel, source="client").to_json())
 
         deadline = time.time() + timeout
@@ -67,8 +72,8 @@ def stream(query: str, timeout: float | None = None, history: list | None = None
 
 
 def ask(query: str, timeout: float | None = None, show_progress: bool = False,
-        history: list | None = None) -> dict:
-    for kind, data in stream(query, timeout, history=history):
+        history: list | None = None, session_id: str | None = None) -> dict:
+    for kind, data in stream(query, timeout, history=history, session_id=session_id):
         if kind == "progress" and show_progress:
             print(f"  ⏳ {data.get('stage', '?')}: {data.get('detail', '')}",
                   file=sys.stderr)

@@ -36,6 +36,7 @@ CHAT_HTML = Path(__file__).parent / "web" / "chat.html"
 class QueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     timeout: Optional[float] = Field(default=None, ge=1, le=600)
+    session_id: Optional[str] = Field(default=None, max_length=64)
 
 
 def create_app():
@@ -59,13 +60,13 @@ def create_app():
 
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
-        """Pro Nachricht {query}: Progress-Events streamen, dann die Antwort.
+        """Pro Nachricht {query, session_id?}: Progress-Events streamen, dann die Antwort.
         client.stream() blockiert (Redis-Pubsub) → läuft im Thread-Pool.
         Gesprächskontext lebt pro Verbindung (Seite neu laden = neues Gespräch)."""
         from collect.client import stream
 
         if not ws_authorized(ws):
-            await ws.close(code=1008)  # Policy Violation (Auth/Rate)
+            await ws.close(code=1008)
             return
         await ws.accept()
         history: list[dict] = []
@@ -76,7 +77,17 @@ def create_app():
                 if not query:
                     await ws.send_json({"type": "error", "detail": "Leere Query."})
                     continue
-                events = stream(query, history=list(history))
+                session_id = req.get("session_id")
+                if session_id and settings.session_enabled:
+                    try:
+                        from collect.session import SessionStore
+                        db_history = SessionStore().get_turns(str(session_id))
+                        if db_history:
+                            history = list(db_history)
+                    except Exception:
+                        pass
+                events = stream(query, history=list(history),
+                                session_id=str(session_id) if session_id else None)
                 try:
                     while True:
                         item = await asyncio.to_thread(next, events, None)
@@ -108,7 +119,7 @@ def create_app():
     @app.post("/api/query")
     def query(req: QueryRequest, _auth=Depends(require_auth("expensive"))):
         from collect.client import ask
-        result = ask(req.query, timeout=req.timeout)
+        result = ask(req.query, timeout=req.timeout, session_id=req.session_id)
         if result.get("meta", {}).get("timeout"):
             raise HTTPException(status_code=504, detail="Query timed out")
         return result
@@ -134,6 +145,40 @@ def create_app():
              "object": t.object, "source": t.source}
             for t in rows
         ]}
+
+    @app.get("/api/sessions")
+    def list_sessions(_auth=Depends(require_auth("light"))):
+        if not settings.session_enabled:
+            return {"sessions": [], "note": "sessions disabled"}
+        from collect.session import SessionStore
+        return {"sessions": SessionStore().list_sessions()}
+
+    @app.get("/api/sessions/{sid}")
+    def get_session(sid: str, _auth=Depends(require_auth("light"))):
+        if not settings.session_enabled:
+            raise HTTPException(status_code=404, detail="sessions disabled")
+        from collect.session import SessionStore
+        s = SessionStore().get(sid)
+        if not s:
+            raise HTTPException(status_code=404, detail="not found")
+        return s
+
+    @app.post("/api/sessions")
+    def create_session(req: dict, _auth=Depends(require_auth("light"))):
+        if not settings.session_enabled:
+            raise HTTPException(status_code=404, detail="sessions disabled")
+        from collect.session import SessionStore
+        import uuid
+        sid = req.get("id") or str(uuid.uuid4())[:8]
+        return SessionStore().create(sid, req.get("title", ""))
+
+    @app.delete("/api/sessions/{sid}")
+    def delete_session(sid: str, _auth=Depends(require_auth("expensive"))):
+        if not settings.session_enabled:
+            raise HTTPException(status_code=404, detail="sessions disabled")
+        from collect.session import SessionStore
+        SessionStore().delete(sid)
+        return {"deleted": sid}
 
     return app
 

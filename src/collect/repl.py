@@ -10,18 +10,23 @@ nächsten Query.
     > /status                   Agenten-Heartbeats
     > /review                   Staging-Tripel bestätigen/verwerfen
     > /facts                    verbürgte Fakten anzeigen
+    > /session save <name>      Session speichern
+    > /session list             Sessions auflisten
+    > /session load <id>        Session laden
+    > /session delete <id>      Session löschen
     > /quit
 """
 
 from __future__ import annotations
 
 import sys
+import uuid
 from pathlib import Path
 
 from collect.client import ask
 from collect.config import settings
 
-HELP = ("Befehle: /status  /review  /facts  /help  /quit — "
+HELP = ("Befehle: /status  /review  /facts  /session  /help  /quit — "
         "alles andere geht als Frage an den Stack.")
 
 
@@ -83,9 +88,80 @@ def cmd_review(input_fn=input, print_fn=print) -> str:
     return f"✓ {confirmed} verbürgt, {rejected} verworfen."
 
 
+def _store():
+    from collect.session import SessionStore
+    return SessionStore()
+
+
+def cmd_session(args: str, context: dict, print_fn=print) -> str:
+    from collect.agents.session import MeetingProtokoll
+
+    parts = args.split()
+    sub = parts[0] if parts else ""
+    rest = " ".join(parts[1:])
+
+    store = _store()
+
+    if sub == "save":
+        sid = context.get("session_id") or str(uuid.uuid4())[:8]
+        title = rest or f"Session {sid}"
+        store.create(sid, title)
+        n = store.turn_count(sid)
+        context["session_id"] = sid
+        return f"✓ Session '{title}' gespeichert ({n} Turns)."
+
+    if sub == "list":
+        sessions = store.list_sessions()
+        if not sessions:
+            return "Keine Sessions gespeichert."
+        lines = []
+        for s in sessions:
+            lines.append(f"  [{s['id'][:8]}] {s['title'][:40]} "
+                         f"({s['turn_count']} Turns, {time.ctime(s['updated_at'])[:16]})")
+        return "\n".join(lines)
+
+    if sub == "load":
+        if not rest:
+            return "Usage: /session load <id>"
+        s = store.get(rest[:64])
+        if not s:
+            return f"Session {rest[:8]} nicht gefunden."
+        turns = s.get("turns", [])
+        context["session_id"] = s["id"]
+        context["history"] = []
+        for t in turns[-10:]:
+            context["history"].append({"q": t["query"], "a": t["answer"]})
+        # Summary als Kontext-Präfix, falls vorhanden
+        summary = store.get_summary(s["id"])
+        if summary:
+            context["history"].insert(0, {"q": "_summary", "a": summary})
+        return f"✓ Session '{s['title']}' geladen ({len(turns)} Turns)."
+
+    if sub == "delete":
+        if not rest:
+            return "Usage: /session delete <id>"
+        store.delete(rest[:64])
+        if context.get("session_id") == rest[:64]:
+            context["session_id"] = None
+        return f"Session {rest[:8]} gelöscht."
+
+    if sub == "summarize":
+        sid = context.get("session_id")
+        if not sid:
+            return "Keine aktive Session — zuerst /session save."
+        mp = MeetingProtokoll(store)
+        summary = mp.summarize(sid)
+        return f"✓ Summarized ({len(summary)} Zeichen)." if summary else "✗ Summary fehlgeschlagen."
+
+    import time as _time  # noqa: F811
+    return ("/session save [name]  /session list  /session load <id>  "
+            "/session delete <id>  /session summarize")
+
+
 def repl(input_fn=input, print_fn=print) -> int:
     print_fn(f"{settings.display_name} REPL — {HELP}")
-    history: list[dict] = []
+    _session_store = _store()
+    context: dict = {"history": [], "session_id": None}
     while True:
         try:
             line = input_fn("\n> ").strip()
@@ -104,15 +180,25 @@ def repl(input_fn=input, print_fn=print) -> int:
             print_fn(cmd_facts())
         elif line == "/review":
             print_fn(cmd_review(input_fn, print_fn))
+        elif line.startswith("/session"):
+            args = line[len("/session"):].strip()
+            print_fn(cmd_session(args, context, print_fn))
         elif line.startswith("/"):
             print_fn(f"Unbekannter Befehl: {line} — {HELP}")
         else:
-            result = ask(line, show_progress=True, history=list(history))
+            sid = context.get("session_id")
+            result = ask(line, show_progress=True, history=list(context["history"]),
+                         session_id=sid)
             print_fn("\n" + result.get("text", ""))
             meta = result.get("meta", {})
             if meta and not meta.get("timeout"):
-                history.append({"q": line, "a": result.get("text", "")})
-                del history[:-5]
+                context["history"].append({"q": line, "a": result.get("text", "")})
+                del context["history"][:-settings.session_max_turns]
+                if sid:
+                    _session_store.add_turn(
+                        sid, line, result.get("text", ""),
+                        zone=meta.get("zone", ""), best_distance=meta.get("best_distance"),
+                        duration_s=meta.get("duration_s"), meta=meta)
                 print_fn(f"\n[zone={meta.get('zone')} "
                          f"distance={meta.get('best_distance', 0):.1f} "
                          f"dauer={meta.get('duration_s')}s]")

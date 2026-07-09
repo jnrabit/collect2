@@ -78,7 +78,7 @@ def test_ws_session_accumulates_history(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "ossifikat_db", tmp_path / "o.db")
     seen_histories = []
 
-    def fake_stream(query, timeout=None, history=None):
+    def fake_stream(query, timeout=None, history=None, session_id=None):
         seen_histories.append(history or [])
         yield ("answer", {"text": f"Antwort auf {query}", "meta": {"zone": "TRUST"}})
 

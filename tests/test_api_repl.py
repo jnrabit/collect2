@@ -62,7 +62,8 @@ def test_query_endpoint_calls_ask(client, monkeypatch):
     c, mp = client
     import collect.client
     mp.setattr(collect.client, "ask",
-               lambda q, timeout=None: {"text": f"Antwort auf: {q}", "meta": {"zone": "TRUST"}})
+               lambda q, timeout=None, show_progress=False, history=None, session_id=None:
+               {"text": f"Antwort auf: {q}", "meta": {"zone": "TRUST"}})
     resp = c.post("/api/query", json={"query": "Testfrage"})
     assert resp.status_code == 200
     assert resp.json()["text"] == "Antwort auf: Testfrage"
@@ -78,7 +79,8 @@ def test_query_timeout_is_504(client, monkeypatch):
     c, mp = client
     import collect.client
     mp.setattr(collect.client, "ask",
-               lambda q, timeout=None: {"text": "⚠️ Timeout", "meta": {"timeout": True}})
+               lambda q, timeout=None, show_progress=False, history=None, session_id=None:
+               {"text": "⚠️ Timeout", "meta": {"timeout": True}})
     assert c.post("/api/query", json={"query": "x"}).status_code == 504
 
 
@@ -137,7 +139,7 @@ def test_ws_chat_streams_progress_then_answer(client, monkeypatch):
     c, mp = client
     import collect.client
 
-    def fake_stream(query, timeout=None, history=None):
+    def fake_stream(query, timeout=None, history=None, session_id=None):
         yield ("progress", {"stage": "routing", "detail": "general"})
         yield ("answer", {"text": f"Antwort: {query}", "meta": {"zone": "TRUST"}})
 

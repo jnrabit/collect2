@@ -24,7 +24,7 @@ def app_client(monkeypatch, tmp_path):
         # /api/query soll nicht wirklich den Stack rufen
         import collect.client
         monkeypatch.setattr(collect.client, "ask",
-                            lambda q, timeout=None: {"text": "ok", "meta": {}})
+                            lambda q, timeout=None, show_progress=False, history=None, session_id=None: {"text": "ok", "meta": {}})
         return TestClient(api.create_app())
 
     return build
@@ -145,7 +145,7 @@ def test_body_cap_rejects_large_payload(app_client, monkeypatch):
 def test_ws_requires_token_when_configured(app_client, monkeypatch):
     import collect.client
 
-    def fake_stream(q, history=None):        # Generator → hat .close()
+    def fake_stream(q, history=None, session_id=None):  # Generator → hat .close()
         yield ("answer", {"text": "ok", "meta": {}})
 
     monkeypatch.setattr(collect.client, "stream", fake_stream)
