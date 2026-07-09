@@ -137,3 +137,38 @@ def test_facts_graceful_without_ossifikat(monkeypatch, tmp_path):
     r = c.get("/api/facts")
     assert r.status_code == 200
     assert r.json()["facts"] == []
+
+
+# ── build_agents-Smoke: fängt "referenziert, aber nicht importiert" ───────
+
+def test_build_agents_constructs_all(monkeypatch):
+    """build_agents lief nur im echten main() → ein fehlender Agent-Import
+    (NameError) rutschte durch Tests+doctor. Dieser Smoke-Test konstruiert
+    den ganzen Stack mit gemockten schweren Abhängigkeiten."""
+    from collect.bus import InMemoryBus
+    from collect.agents import runner
+    import collect.retrieval.embedding as emb_mod
+    import collect.retrieval.router as router_mod
+    import collect.retrieval.service as svc_mod
+    import collect.grounding.facts as facts_mod
+
+    class FakeEmb:
+        def embed_one(self, t): return [0.0]
+        def embed(self, t): return [[0.0]]
+
+    class FakeSearcher:
+        def __init__(self, *a, **k): pass
+
+    monkeypatch.setattr(emb_mod, "get_backend", lambda: FakeEmb())
+    monkeypatch.setattr(router_mod.CodeRouter, "from_config",
+                        classmethod(lambda cls, fn: object()))
+    monkeypatch.setattr(svc_mod, "VaultSearcher", FakeSearcher)
+    monkeypatch.setattr(facts_mod, "FactGrounder", lambda fn: object())
+    monkeypatch.setattr(runner.settings, "translate_enabled", False)
+    monkeypatch.setattr(runner.settings, "decompose_enabled", False)
+
+    agents = runner.build_agents(InMemoryBus(prefix="t."), generate_fn=lambda *a, **k: "")
+    names = {a.name for a in agents}
+    # Alle erwarteten Agenten ohne NameError konstruiert
+    assert {"orchestrator", "filecontext", "websearch", "llm", "response"} <= names
+    assert len(agents) >= 12

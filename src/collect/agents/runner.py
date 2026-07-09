@@ -22,6 +22,7 @@ def build_agents(bus, generate_fn=None):
     """Konstruiert alle Kern-Agenten (Ollama-generate injizierbar für Tests)."""
     from collect.agents.decision import DecisionAgent
     from collect.agents.executor import ExecutorAgent
+    from collect.agents.filecontext import FileContextAgent
     from collect.agents.learning import LearningAgent
     from collect.agents.llm import LLMAgent
     from collect.agents.orchestrator import OrchestratorAgent
