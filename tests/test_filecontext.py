@@ -111,13 +111,22 @@ def test_large_file_selects_relevant_chunk(allow, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "file_direct_threshold", 100)
     monkeypatch.setattr(settings, "file_chunk_chars", 60)
     monkeypatch.setattr(settings, "file_top_chunks", 2)
-    # Zielzeile mit eindeutigem Query-Match unter Füllzeilen
-    lines = ["# füller zeile ohne bezug\n"] * 20
+    lines = ["# fueller zeile ohne bezug\n"] * 20
     lines.insert(10, "def quantum_entanglement_helper():\n")
     f = tmp_path / "big.py"; f.write_text("".join(lines))
-    ctx = build_file_context("quantum_entanglement_helper", [str(f)], _embed)
+
+    # Deterministischer Marker-Embedder: Chunk mit dem Term ist zur Query
+    # ausgerichtet (cos=1), Rest orthogonal (cos=0). Testet die Top-k-Auswahl,
+    # nicht die (nicht-semantische) hash-basierte fake_embedding.
+    term = "quantum_entanglement_helper"
+
+    def marker_embed(texts):
+        return np.array([[1.0, 0.0] if term in t else [0.0, 1.0]
+                         for t in texts], dtype=np.float32)
+
+    ctx = build_file_context(term, [str(f)], marker_embed)
     assert ctx.has_content
-    assert any("quantum_entanglement_helper" in c["text"] for c in ctx.chunks)
+    assert any(term in c["text"] for c in ctx.chunks)
 
 
 def test_rejected_path_in_context(tmp_path, monkeypatch):
