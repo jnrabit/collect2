@@ -45,7 +45,7 @@ collect-harvest = "collect.harvest.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-collect = ["retrieval/lib/*.so", "web/*.html"]
+collect = ["retrieval/lib/*.so", "web/*.html", "workflow/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,57 @@
+{
+  "function": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\ndef fibonacci(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number (0-indexed).\"\"\"\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```\nWichtig: Immer Typ-Hints, Docstring, Edge-Cases behandeln."
+    }
+  },
+  "class": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nfrom dataclasses import dataclass\nfrom typing import Optional\n\n@dataclass\nclass User:\n    name: str\n    email: str\n    age: Optional[int] = None\n\n    def is_adult(self) -> bool:\n        return self.age is not None and self.age >= 18\n```\nWichtig: dataclass nutzen wo sinnvoll, __init__ nur bei komplexer Logik."
+    }
+  },
+  "regex": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport re\n\ndef extract_emails(text: str) -> list[str]:\n    \"\"\"Extract all email addresses from text.\"\"\"\n    pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'\n    return re.findall(pattern, text)\n```\nWichtig: Regex immer als raw-String, Pattern dokumentieren, an Sonderfälle denken (Subdomains, TLDs)."
+    }
+  },
+  "file_io": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport json\nfrom pathlib import Path\nfrom typing import Any\n\ndef load_json(path: str | Path) -> dict[str, Any]:\n    \"\"\"Load and parse a JSON file.\"\"\"\n    path = Path(path)\n    if not path.exists():\n        raise FileNotFoundError(f\"File not found: {path}\")\n    with open(path, encoding='utf-8') as f:\n        return json.load(f)\n```\nWichtig: Pathlib statt os.path, encoding='utf-8' immer explizit, FileNotFound behandeln."
+    }
+  },
+  "api": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport requests\nfrom typing import Optional\n\ndef fetch_data(url: str, timeout: float = 10.0) -> Optional[dict]:\n    \"\"\"Fetch JSON data from an API endpoint.\"\"\"\n    try:\n        resp = requests.get(url, timeout=timeout)\n        resp.raise_for_status()\n        return resp.json()\n    except requests.RequestException:\n        return None\n```\nWichtig: Immer Timeout setzen, raise_for_status() nutzen, Exceptions fangen."
+    }
+  },
+  "test": {
+    "execution": {
+      "example": "BEISPIEL für einen korrekten Test:\n```python\nimport pytest\nfrom mymodule import fibonacci\n\ndef test_fibonacci_base_cases():\n    assert fibonacci(0) == 0\n    assert fibonacci(1) == 1\n\ndef test_fibonacci_typical():\n    assert fibonacci(10) == 55\n\ndef test_fibonacci_raises_on_negative():\n    with pytest.raises(ValueError):\n        fibonacci(-1)\n```\nWichtig: Tests importieren von der IMPLEMENTIERUNG, Erwartungswerte MÜSSEN exakt zum Code passen."
+    }
+  },
+  "cli": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport argparse\nimport sys\n\ndef main() -> int:\n    parser = argparse.ArgumentParser(description='Tool description')\n    parser.add_argument('input', help='Input file path')\n    parser.add_argument('--verbose', '-v', action='store_true')\n    args = parser.parse_args()\n    return 0\n\nif __name__ == '__main__':\n    sys.exit(main())\n```\nWichtig: main() -> int für Exit-Code, argparse mit Hilfe-Texten."
+    }
+  },
+  "algorithm": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nfrom typing import TypeVar\n\nT = TypeVar('T')\n\ndef binary_search(items: list[T], target: T) -> int:\n    \"\"\"Return index of target or -1 if not found. Items must be sorted.\"\"\"\n    lo, hi = 0, len(items) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if items[mid] == target:\n            return mid\n        elif items[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n```\nWichtig: Edge Cases (leere Liste), TypeVar für generische Algorithmen."
+    }
+  },
+  "string": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport re\nimport unicodedata\n\ndef slugify(text: str, separator: str = '-') -> str:\n    \"\"\"Convert text to a URL-safe slug.\"\"\"\n    text = unicodedata.normalize('NFKD', text)\n    text = text.encode('ascii', 'ignore').decode('ascii')\n    text = re.sub(r'[^\\w\\s-]', '', text.lower())\n    return re.sub(r'[-\\s]+', separator, text).strip(separator)\n```\nWichtig: Unicode-Normalisierung, Sonderzeichen strippen, Mehrfach-Separatoren kollabieren."
+    }
+  },
+  "data": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nimport sqlite3\nfrom pathlib import Path\nfrom typing import Optional\n\ndef query_db(db_path: str, sql: str, params: tuple = ()) -> list[tuple]:\n    \"\"\"Execute a parameterized SQL query.\"\"\"\n    conn = sqlite3.connect(str(db_path))\n    try:\n        return conn.execute(sql, params).fetchall()\n    finally:\n        conn.close()\n```\nWichtig: Parameterisierte Queries (kein f-String!), finally-Close, Pathlib für Pfade."
+    }
+  },
+  "general": {
+    "execution": {
+      "example": "BEISPIEL für eine korrekte Implementierung:\n```python\nfrom typing import Optional\n\ndef process_items(items: list[str], prefix: str = '') -> list[str]:\n    \"\"\"Filter and transform a list of strings.\"\"\"\n    if not items:\n        return []\n    return [f\"{prefix}{item.strip()}\" for item in items if item.strip()]\n```\nWichtig: Edge Cases (leere Liste), Type-Hints, List-Comprehension statt map/filter."
+    }
+  }
+}

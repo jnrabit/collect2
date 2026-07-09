@@ -6,8 +6,9 @@ keyword-basierte Task-Typ-Erkennung + feste Few-Shot-Injektion. Die vibelike-
 Erfahrung zeigt: schon 1-2 passende Beispiele machen den 7B-Coder deutlich
 treffsicherer. Ossifikat-Feedback-Loop kann später ergänzt werden.
 
-Idioms werden aus data/idioms.json geladen; der Store ist transportfrei
-und direkt testbar.
+Idioms werden aus der paket-internen idioms.json geladen (Feature-Config,
+kein User-Data → gehört ins Repo, nicht ins gitignorte data/); der Store ist
+transportfrei und direkt testbar.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from collect.config import settings
 
 logger = logging.getLogger(__name__)
 
-IDIOMS_PATH = Path(__file__).parents[3] / "data" / "idioms.json"
+IDIOMS_PATH = Path(__file__).parent / "idioms.json"
 
 CATEGORY_KEYWORDS = {
     "function": r"\bfunktion\b|\bfunction\b|\bmethode\b|\bmethod\b|\bdef\b",
