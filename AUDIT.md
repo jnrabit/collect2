@@ -27,9 +27,9 @@ neues Repo statt In-Place-Umbau · lokal-first (Ollama), Cloud später optional.
 
 | | |
 |---|---|
-| Eigener Code | ~5.700 LOC in `src/collect/` (größtes Modul < 260 LOC) |
-| Tests | **196 passed** (`pytest`), plus Integrationstests gegen echte Vaults; CI grün (157 passed / 6 skipped ohne Daten) |
-| Agenten | 10 (ein Prozess, ein Bus-Thread pro Agent) |
+| Eigener Code | ~8.200 LOC in `src/collect/` (größtes Modul < 300 LOC) |
+| Tests | **301 passed** (`pytest`), plus Integrationstests gegen echte Vaults; CI grün |
+| Agenten | 12 (ein Prozess, ein Bus-Thread pro Agent) |
 | Vaults | General 258.991 Docs (harvestbar) · Code 1.469 Docs · Caches ~416 MB, 384-dim |
 | Daten | `~/collect2/data/` (migriert, SHA256-verifiziert; Alt-Daten unberührt) |
 | Python | 3.12 (gepinnt — 3.14 brach protobuf im Alt-Stack), venv `.venv` |
@@ -153,8 +153,13 @@ Tasks (slugify) scheitern an 7B-Erwartungstreue → ehrlich rot, kein Commit.
 | API-Exposure | Schutzschicht steht (Token/Rate/CORS/Header/Preflight); vor echter Exposure noch: TLS am Reverse-Proxy, optional CSP |
 | Cutover offen | Alt-Stack `~/collect` läuft parallel weiter — Stoppen/Archivieren ist User-Entscheidung |
 | Harvest v1 | nur Wikipedia-Adapter; ArXiv/OpenAlex/RFC als Ausbau. Kein Daemon/Scheduler (manueller Lauf) |
-| Idiom-System / Sandbox / validator2-Vollport | bewusst zurückgestellt (Anti-Scaffold-Regel); Consumer (Workflow) existiert jetzt |
+| validator2-Vollport | ✅ Phase 7: `workflow.validator` — Cross-File-Import/Export-Abgleich, Plan-Drift, halluzinierte Dateien, Test-Gaps |
+| Sandbox | ✅ Phase 7: `workflow.sandbox` — Prozessgruppen-Isolation, PYTHONPATH-Restriktion, Timeout-Kill |
+| ArXiv/RFC-Harvest | ✅ Phase 7: `collect-harvest arxiv "query"` + `collect-harvest rfc` |
+| Harvest-Daemon | ✅ Phase 7: `collect-harvest daemon` — periodischer Multi-Source-Ingest |
 | Follow-up-Retrieval | Kontext nur in Synthese; kurze referenzielle Fragen retrieven schwach (Query-Rewrite wäre Ausbau) |
+| Sessions | **Phase 7: Persistent Sessions** via SQLite + Auto-Summarization (MeetingProtokoll). REPL: /session save|list|load|delete. |
+| Web-Recherche | **Phase 7: WebSearchAgent** — expliziter Trigger ("recherchiere im web") + optionaler Auto-FALLBACK (Opt-in via COLLECT_WEB_SEARCH_AUTO). SearXNG-basiert, selbst-gehostet. |
 
 ## 10. Verzeichnis-Karte
 
@@ -163,12 +168,17 @@ src/collect/
   bus.py, config.py, client.py, status.py, api.py, repl.py
   doctor.py, regression_guard.py, validation.py
   agents/    base, orchestrator, retrieval, llm, decision, planning,
-             executor, response, learning, workflow, runner, ollama
+              executor, response, learning, workflow, websearch,
+              filecontext, session, runner, ollama
+  session.py                     # SQLite-Session-Store
   retrieval/ vault, native(+lib/*.so), store, chaos, resonance,
-             embedding, router, zones, translator, decomposer, service
+              embedding, router, zones, translator, decomposer, service,
+              filecontext, rewriter
   grounding/ facts, triplets
-  workflow/  context, briefing, planning, execution, verify, engine
+  workflow/  context, briefing, planning, execution, verify, engine,
+              idioms                      # Idiom-System (Phase 7)
   harvest/   wikipedia, ingest, cli
+  search/    __init__, web                # Web-Recherche (SearXNG, Phase 7)
   retrieval/ … + rewriter (Follow-up-Query-Rewrite)
   web/chat.html
 scripts/   start|stop|status.sh, migrate_data.py, retrieval_benchmark.py

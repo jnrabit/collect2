@@ -58,6 +58,16 @@ _CORE_MODULES = [
     "collect.harvest",
     "collect.harvest.wikipedia",
     "collect.harvest.ingest",
+    # Sessions, Web-Suche, Idioms, Validator, Sandbox (Phase 7)
+    "collect.session",
+    "collect.agents.session",
+    "collect.search.web",
+    "collect.agents.websearch",
+    "collect.workflow.idioms",
+    "collect.workflow.validator",
+    "collect.workflow.sandbox",
+    "collect.harvest.arxiv",
+    "collect.harvest.rfc",
 ]
 
 

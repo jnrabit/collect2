@@ -128,6 +128,47 @@ class CollectSettings(BaseSettings):
                     "Runde 1 den vergessenen Import, Runde 2 die überstrenge "
                     "Test-Erwartung.",
     )
+    workflow_idioms_enabled: bool = Field(
+        default=True,
+        description="Idiom-System: Few-Shot-Patterns pro Task-Typ in die "
+                    "Code-Generierung injizieren",
+    )
+
+    # ── Sessions ─────────────────────────────────────────────────────────
+    session_enabled: bool = True
+    session_db: Path = Field(
+        default_factory=lambda: Path.home() / "collect2" / "data" / "sessions.db",
+        description="SQLite-DB für persistente Gesprächs-Sessions",
+    )
+    session_max_turns: int = Field(
+        default=5, description="Max Turns pro Session vor Auto-Summarization")
+    session_summary_model: str = Field(
+        default="",
+        description="Modell für Session-Summarization; leer = decompose_model")
+
+    # ── Web-Recherche ────────────────────────────────────────────────────
+    web_search_enabled: bool = Field(
+        default=True,
+        description="Web-Recherche als FALLBACK + expliziter Trigger "
+                    "('recherchiere im web' etc.)",
+    )
+    web_search_auto: bool = Field(
+        default=False,
+        description="Automatische Web-Recherche bei Vault-FALLBACK (Opt-in). "
+                    "Expliziter Trigger ('recherchiere im web') funktioniert "
+                    "unabhängig hiervon.",
+    )
+    web_search_url: str = Field(
+        default="http://localhost:8888",
+        description="SearXNG-Instanz (selbst-gehostet, keine Cloud-Abhängigkeit)",
+    )
+    web_search_timeout: float = 15.0
+    web_search_results: int = Field(
+        default=5, description="max Snippets in die Synthese")
+    web_search_trigger: str = Field(
+        default="recherchiere|recherchieren|such im web|suche im web|google|"
+                "web suche|web recherche|im internet|online suche",
+        description="Regex-Trigger für explizite Web-Recherche-Anfrage (case-insensitiv)")
 
     # ── Grounding & Lernen (Ossifikat) ──────────────────────────────────
     ossifikat_db: Path = Field(
