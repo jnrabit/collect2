@@ -17,6 +17,7 @@ from collect.agents.base import BaseAgent
 from collect.bus import Message
 from collect.config import settings
 from collect.retrieval.router import ROUTE_GENERAL
+from collect.search.web import is_web_request
 
 import re
 
@@ -89,6 +90,16 @@ class OrchestratorAgent(BaseAgent):
         self.log.info("Anfrage %s: %s…", cid[:8], query[:60])
         self.progress(cid, "query_received", query[:80])
 
+        # Session-Kontext laden (persistente Sessions, Prio 2)
+        session_id = msg.data.get("session_id")
+        if session_id:
+            try:
+                from collect.session import SessionStore
+                store = SessionStore()
+                msg.data["history"] = store.build_context(session_id)
+            except Exception as e:
+                self.log.warning("Session-Load fehlgeschlagen: %s", e)
+
         # Code-Task VOR Plan prüfen (Implementier-Tasks enthalten oft
         # Plan-Vokabular); beide Pfade laufen exklusiv.
         if is_code_task(query):
@@ -97,6 +108,13 @@ class OrchestratorAgent(BaseAgent):
         if is_plan_query(query):
             self._dispatch_plan(query, cid, msg)
             return
+
+        # 0. Explizite Web-Recherche? "recherchiere im web nach X"
+        # Prio 3: User kann proaktiv Web-Suche anfordern.
+        explicit_web = False
+        if settings.web_search_enabled and is_web_request(query):
+            explicit_web = True
+            self.progress(cid, "web_triggered", "Web-Recherche angefordert")
 
         # 0. Ad-hoc-Dateikontext: zeigt die Query auf existierende Pfade?
         # Deterministisches Gate, kein LLM. Freigegeben → Datei-Beitrag ergänzt
@@ -190,6 +208,26 @@ class OrchestratorAgent(BaseAgent):
             self.publish("file_request", "file_request",
                          {"query": query, "paths": file_paths}, cid)
 
+        # Web-Recherche: explizit immer, bei FALLBACK wird sie später
+        # vom ResponseAgent nachgefordert (zweistufig).
+        if explicit_web:
+            self.publish("web_request", "web_request",
+                         {"query": query, "explicit": True}, cid)
+            if "web" not in expected:
+                expected.append("web")
+                self.publish("response_manifest", "response_manifest", {
+                    "query": query,
+                    "rewritten_query": rewritten_query,
+                    "expected": expected,
+                    "deadline": settings.response_deadline,
+                    "route": route,
+                }, cid, reply_to=msg.reply_to)
+
+        # Session speichern nach der Antwort (asynchron, best-effort)
+        if session_id:
+            self.bus.call_later(0.5, lambda: self._save_session(
+                session_id, query, cid))
+
     def _reject_paths(self, paths: list, cid: str, msg: Message) -> None:
         """Pfad(e) außerhalb der Allowlist → nur Ablehnung, kein Retrieval."""
         self.log.info("Pfade nicht freigegeben: %s", paths)
@@ -226,3 +264,12 @@ class OrchestratorAgent(BaseAgent):
             "action": "create_and_execute",
             "query": query,
         }, cid)
+
+    def _save_session(self, session_id: str, query: str, cid: str) -> None:
+        try:
+            from collect.session import SessionStore
+            store = SessionStore()
+            store.add_turn(session_id, query, "", zone="",
+                           best_distance=None, duration_s=None)
+        except Exception as e:
+            self.log.warning("Session-Save fehlgeschlagen: %s", e)

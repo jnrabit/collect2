@@ -52,6 +52,7 @@ class LLMAgent(BaseAgent):
             "retrieval_response": self.on_contribution("retrieval"),
             "code_retrieval_response": self.on_contribution("code_retrieval"),
             "file_response": self.on_contribution("file"),
+            "web_response": self.on_contribution("web"),
         }
 
     _EARLY_TTL = 120.0  # Sek.: verwaiste Early-Beiträge (Request kam nie) verwerfen
@@ -108,14 +109,16 @@ class LLMAgent(BaseAgent):
             except Exception as e:
                 self.log.warning("%s: Fakt-Grounding fehlgeschlagen: %s", cid[:8], e)
 
-        # Dateiinhalt erdet die Antwort → nie überspringen. Sonst: alle
-        # Vault-Zonen FALLBACK und keine Fakten → generieren wäre Halluzination.
+        # Dateiinhalt/Web-Recherche erdet die Antwort → nie überspringen.
+        # Sonst: alle Vault-Zonen FALLBACK und keine Fakten → Halluzination.
         file_contrib = state["contribs"].get("file")
         has_file = bool(file_contrib and file_contrib.get("chunks"))
+        web_contrib = state["contribs"].get("web")
+        has_web = bool(web_contrib and web_contrib.get("count"))
         zones = [c.get("zone") for k, c in state["contribs"].items()
                  if k in ("retrieval", "code_retrieval")]
-        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts and not has_file:
-            self.log.info("%s: alle Zonen FALLBACK, keine Fakten/Datei — LLM übersprungen", cid[:8])
+        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts and not has_file and not has_web:
+            self.log.info("%s: alle Zonen FALLBACK, keine Fakten/Datei/Web — LLM übersprungen", cid[:8])
             self.publish("llm_response", "llm_response",
                          {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
             return
@@ -206,6 +209,17 @@ class LLMAgent(BaseAgent):
                           "als gesichert behandeln; beantworte die Frage GESTÜTZT "
                           "auf diesen Inhalt):\n" + "\n\n".join(blocks) + "\n\n")
 
+        # Web-Recherche-Ergebnisse — frisch, aber nicht verifiziert
+        web_block = ""
+        web_contrib = state["contribs"].get("web")
+        if web_contrib and web_contrib.get("hits"):
+            wblocks = []
+            for h in web_contrib["hits"][:5]:
+                wblocks.append(f"[Web] {h.get('title', '?')}\n{h.get('content', '')[:600]}")
+            web_block = ("WEB-RECHERCHE (aktuell aus dem Internet — frisch, aber "
+                         "nicht verifiziert; kennzeichne Web-Informationen als "
+                         "solche):\n" + "\n\n".join(wblocks) + "\n\n")
+
         parts = []
         for i, doc in enumerate(docs[:TOP_DOCS], 1):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
@@ -225,6 +239,6 @@ class LLMAgent(BaseAgent):
                              + "\n".join(lines) + "\n\n")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
-        return (f"{history_block}{fact_block}{file_block}QUELLEN:\n{context}\n\n"
+        return (f"{history_block}{fact_block}{file_block}{web_block}QUELLEN:\n{context}\n\n"
                 f"FRAGE: {state['query']}\n\n"
-                f"Antworte gestützt auf Dateiinhalt, verbürgte Fakten und Quellen.")
+                f"Antworte gestützt auf Dateiinhalt, verbürgte Fakten, Web-Recherche und Quellen.")

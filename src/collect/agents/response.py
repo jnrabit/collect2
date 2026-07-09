@@ -19,6 +19,7 @@ from pathlib import Path
 
 from collect.agents.base import BaseAgent
 from collect.bus import Message
+from collect.config import settings
 from collect.retrieval.zones import (
     NO_HIT_DISTANCE,
     ZONE_FALLBACK,
@@ -33,6 +34,7 @@ CONTRIB_CHANNELS = {
     "planning_response": "planning",
     "workflow_response": "workflow",
     "file_response": "file",
+    "web_response": "web",
 }
 
 
@@ -96,6 +98,28 @@ class ResponseAgent(BaseAgent):
         if state is None or state["finalized"]:
             return
         state["finalized"] = True
+
+        # FALLBACK ohne Web? → Web-Recherche als letzter Rettungsanker.
+        # Nur wenn Web aktiviert ist und nicht bereits im Manifest stand
+        # (d.h. es war kein expliziter Web-Trigger).
+        retrieval = state["contribs"].get("retrieval")
+        code = state["contribs"].get("code_retrieval")
+        best = min((c.get("best_distance", NO_HIT_DISTANCE)
+                    for c in (retrieval, code) if c), default=NO_HIT_DISTANCE)
+        verdict = classify_zone(best if best < NO_HIT_DISTANCE else None)
+        if (settings.web_search_enabled and settings.web_search_auto
+                and verdict.zone == ZONE_FALLBACK
+                and "web" not in state["contribs"]
+                and "web" not in state["expected"]
+                and not state["contribs"].get("file", {}).get("chunks")):
+            self.log.info("%s: FALLBACK — Web-Recherche nachgefordert", cid[:8])
+            self.publish("web_request", "web_request",
+                         {"query": state["query"], "explicit": False}, cid + "_web")
+            state["expected"].add("web")
+            # Kurzer Extra-Deadline für die Web-Suche
+            self.bus.call_later(10.0, lambda: self._deadline(cid))
+            self._states[cid] = state
+            return
 
         text, meta = synthesize(state)
         meta["finalize_reason"] = reason
@@ -200,6 +224,11 @@ def synthesize(state: dict) -> tuple[str, dict]:
         paths = file_contrib.get("paths", [])
         shown = ", ".join(Path(p).name for p in paths[:3]) + ("…" if len(paths) > 3 else "")
         footer.append(f"📄 Datei: {shown} ({file_contrib.get('chunk_count', 0)} Chunk(s))")
+    web_contrib = contribs.get("web")
+    if web_contrib and web_contrib.get("count"):
+        footer.append(f"🌐 Web-Recherche: {web_contrib['count']} Treffer")
+        meta["web_count"] = web_contrib["count"]
+        meta["web_explicit"] = web_contrib.get("explicit", False)
     if facts_used:
         footer.append(f"🔖 {facts_used} verbürgte(r) Fakt(en) als Grounding")
     if retrieval and retrieval.get("count"):
