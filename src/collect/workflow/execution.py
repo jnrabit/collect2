@@ -13,6 +13,7 @@ from pathlib import Path
 
 from collect.regression_guard import check_change
 from collect.validation import write_blockers
+from collect.workflow.idioms import inject_idiom
 
 PROMPT = """Du bist ein präziser Software-Entwickler. Schreibe den VOLLSTÄNDIGEN Inhalt einer Datei.
 
@@ -104,10 +105,10 @@ def execute(ctx, generate, progress=None) -> None:
         if progress:
             progress("workflow_execute", f"{rel} wird generiert…")
         try:
-            raw = generate(PROMPT.format(
+            raw = generate(inject_idiom(PROMPT.format(
                 task=ctx.task, strategy=ctx.plan.get("strategy", ""),
                 path=rel, description=spec["description"], current=current,
-                written=written))
+                written=written), ctx.task, "execution"))
             if isinstance(raw, tuple):
                 raw = raw[0]
             content = extract_code(raw)

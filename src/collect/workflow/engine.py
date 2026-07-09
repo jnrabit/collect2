@@ -11,7 +11,7 @@ from pathlib import Path
 
 from collect.config import settings
 from collect.workflow import briefing as briefing_phase
-from collect.workflow import execution, planning, verify
+from collect.workflow import execution, planning, verify, validator
 from collect.workflow.context import WorkflowContext
 
 
@@ -89,5 +89,12 @@ def run_workflow(task: str, repo=None, generate=None,
         verify.run(ctx)
 
     if ctx.verify.get("ok"):
-        _commit(ctx)
+        note("workflow_validator", "Cross-File-Checks…")
+        val_issues = validator.validate_workflow(ctx)
+        for issue in val_issues:
+            ctx.errors.append(f"[{issue['kind']}] {issue['file']}: {issue['detail']}")
+        if any(i["kind"] in ("missing_export", "hallucinated_file") for i in val_issues):
+            ctx.errors.append("Validator: kritische Cross-File-Probleme → kein Commit.")
+        else:
+            _commit(ctx)
     return ctx
