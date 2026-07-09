@@ -15,6 +15,7 @@ Synthese (Reihenfolge aus der Stabilisierung des Alt-Systems):
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from collect.agents.base import BaseAgent
 from collect.bus import Message
@@ -31,6 +32,7 @@ CONTRIB_CHANNELS = {
     "llm_response": "llm",
     "planning_response": "planning",
     "workflow_response": "workflow",
+    "file_response": "file",
 }
 
 
@@ -115,6 +117,8 @@ class ResponseAgent(BaseAgent):
             "best_distance": meta.get("best_distance"),
             "plan_id": meta.get("plan_id"),
             "context_ids": context_ids,
+            # Dateikontext-Antworten sind flüchtig → LearningAgent ossifiziert nicht
+            "has_file_context": bool(meta.get("file_chunks")),
         }, cid)
         self.log.info("%s: finalisiert (%s, %.1fs)", cid[:8], reason, meta["duration_s"])
 
@@ -140,6 +144,18 @@ def synthesize(state: dict) -> tuple[str, dict]:
         meta["workflow_ok"] = workflow.get("ok")
         meta["committed"] = workflow.get("committed")
 
+    # Ad-hoc-Dateikontext: geerdet (kein Zonen-Verdikt) bzw. Ablehnung
+    file_contrib = contribs.get("file")
+    has_file = bool(file_contrib and file_contrib.get("chunks"))
+    if file_contrib:
+        meta["file_paths"] = file_contrib.get("paths", [])
+        meta["file_chunks"] = file_contrib.get("chunk_count", 0)
+        rejected = file_contrib.get("rejected") or []
+        if rejected and not has_file:
+            parts.append("🚫 Pfad nicht freigegeben: " + ", ".join(rejected)
+                         + "\n(Freigabe über COLLECT_READ_PATHS — bewusster Opt-in.)")
+            meta["file_rejected"] = rejected
+
     # Zonen-Lage über die Retrieval-Beiträge
     retrieval = contribs.get("retrieval")
     code = contribs.get("code_retrieval")
@@ -160,7 +176,7 @@ def synthesize(state: dict) -> tuple[str, dict]:
     if llm is not None:
         content = (llm.get("content") or "").strip()
         if (verdict.zone == ZONE_FALLBACK and not planning and not workflow
-                and not (facts_used and content)):
+                and not has_file and not (facts_used and content)):
             parts.append(
                 "⚠️ Diese Frage liegt außerhalb des indizierten Wissensbereichs. "
                 "Der Vault enthält keine ausreichend nahen Dokumente "
@@ -180,6 +196,10 @@ def synthesize(state: dict) -> tuple[str, dict]:
 
     # 3. Quellen-Fußzeile
     footer = []
+    if has_file:
+        paths = file_contrib.get("paths", [])
+        shown = ", ".join(Path(p).name for p in paths[:3]) + ("…" if len(paths) > 3 else "")
+        footer.append(f"📄 Datei: {shown} ({file_contrib.get('chunk_count', 0)} Chunk(s))")
     if facts_used:
         footer.append(f"🔖 {facts_used} verbürgte(r) Fakt(en) als Grounding")
     if retrieval and retrieval.get("count"):

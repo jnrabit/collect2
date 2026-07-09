@@ -55,6 +55,8 @@ class LearningAgent(BaseAgent):
             return
         if d.get("plan_id"):
             return  # Plan-Ausführungsprotokolle sind keine Fakten-Quelle
+        if d.get("has_file_context"):
+            return  # Ad-hoc-Dateikontext ist flüchtig → nicht sedimentieren
         staged = self._extract_to_staging(text)
         if staged:
             self.staged_total += len(staged)

@@ -44,6 +44,8 @@ _CORE_MODULES = [
     "collect.retrieval.vault",
     "collect.retrieval.chaos",
     "collect.retrieval.service",
+    "collect.retrieval.filecontext",
+    "collect.agents.filecontext",
     # Agenten-Schicht (Phase 3)
     "collect.bus",
     "collect.agents.runner",

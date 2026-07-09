@@ -98,6 +98,19 @@ class OrchestratorAgent(BaseAgent):
             self._dispatch_plan(query, cid, msg)
             return
 
+        # 0. Ad-hoc-Dateikontext: zeigt die Query auf existierende Pfade?
+        # Deterministisches Gate, kein LLM. Freigegeben → Datei-Beitrag ergänzt
+        # das normale Retrieval. Nicht freigegeben → klare Ablehnung, KEIN
+        # stiller Fallback auf Vault-Suche.
+        file_paths, file_rejected = [], []
+        if settings.file_context_enabled:
+            from collect.retrieval.filecontext import detect_paths, path_allowed
+            for p in detect_paths(query):
+                (file_paths if path_allowed(p) else file_rejected).append(p)
+            if file_rejected and not file_paths:
+                self._reject_paths(file_rejected, cid, msg)
+                return
+
         # 0. Follow-up-Rewrite (Gate-Heuristik + Historie, best-effort).
         # Das Original bleibt als Fusion-Subquery erhalten (siehe unten).
         history = msg.data.get("history") or []
@@ -145,6 +158,8 @@ class OrchestratorAgent(BaseAgent):
         expected = ["retrieval", "llm"]
         if route != ROUTE_GENERAL:
             expected.append("code_retrieval")
+        if file_paths:
+            expected.append("file")
         self.publish("response_manifest", "response_manifest", {
             "query": query,
             "rewritten_query": rewritten_query,
@@ -168,6 +183,25 @@ class OrchestratorAgent(BaseAgent):
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:
             self.publish("code_retrieval_request", "code_retrieval_request", request, cid)
+        if file_paths:
+            # Datei-Chunks werden auf der ORIGINAL-Query ausgewählt (der
+            # Dateiinhalt ist meist Code/DE — Übersetzung würde die Auswahl
+            # verfälschen).
+            self.publish("file_request", "file_request",
+                         {"query": query, "paths": file_paths}, cid)
+
+    def _reject_paths(self, paths: list, cid: str, msg: Message) -> None:
+        """Pfad(e) außerhalb der Allowlist → nur Ablehnung, kein Retrieval."""
+        self.log.info("Pfade nicht freigegeben: %s", paths)
+        self.progress(cid, "path_rejected", ", ".join(paths))
+        self.publish("response_manifest", "response_manifest", {
+            "query": msg.data.get("query", ""),
+            "expected": ["file"],
+            "deadline": settings.response_deadline,
+        }, cid, reply_to=msg.reply_to)
+        self.publish("file_response", "file_response", {
+            "paths": [], "rejected": paths, "chunk_count": 0, "chunks": [],
+        }, cid)
 
     def _dispatch_workflow(self, query: str, cid: str, msg: Message) -> None:
         task = query.split(":", 1)[1].strip() if query.lower().startswith("code:") else query

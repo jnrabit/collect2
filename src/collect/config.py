@@ -91,6 +91,27 @@ class CollectSettings(BaseSettings):
         description="execute:-Schritte (Skripte starten) — default aus (Sicherheit)",
     )
 
+    # ── Ad-hoc-Dateikontext + lokaler Ingest ────────────────────────────
+    file_context_enabled: bool = True
+    read_paths: Optional[list[Path]] = Field(
+        default=None,
+        description="Allowlist für Ad-hoc-Datei-Lesen; None = executor_read_roots. "
+                    "Erweiterung ist bewusster Opt-in (COLLECT_READ_PATHS, CSV).",
+    )
+    file_direct_threshold: int = Field(
+        default=8192, description="Datei < N Bytes → ganz in den Prompt (kein Chunking)")
+    file_max_bytes: int = Field(
+        default=2_000_000, description="max. Gesamtbytes über alle gelesenen Dateien")
+    file_max_files: int = Field(
+        default=25, description="max. Dateien bei Verzeichnis-Lesen")
+    file_max_depth: int = Field(default=3, description="max. Verzeichnistiefe")
+    file_chunk_chars: int = Field(default=1200, description="Chunk-Größe (Zeichen)")
+    file_top_chunks: int = Field(default=6, description="relevanteste Chunks in die Synthese")
+    file_extensions: str = Field(
+        default=".py,.js,.ts,.go,.rs,.java,.c,.h,.cpp,.sh,.md,.txt,.rst,"
+                ".toml,.yaml,.yml,.json,.cfg,.ini",
+        description="Endungs-Allowlist (CSV) fürs Verzeichnis-/Local-Lesen")
+
     # ── Code-Workflow (Phase 6) ─────────────────────────────────────────
     workflow_repo: Optional[Path] = Field(
         default=None,
@@ -157,6 +178,15 @@ class CollectSettings(BaseSettings):
     @property
     def api_is_localhost(self) -> bool:
         return self.api_host in ("127.0.0.1", "::1", "localhost")
+
+    @property
+    def effective_read_paths(self) -> list[Path]:
+        """Datei-Lese-Allowlist: read_paths, sonst die Executor-Grenzen."""
+        return self.read_paths if self.read_paths else self.executor_read_roots
+
+    @property
+    def file_ext_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.file_extensions.split(",") if e.strip()}
 
     # ── Modelle (lokal-first, Ollama) ───────────────────────────────────
     ollama_host: str = "localhost"

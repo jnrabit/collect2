@@ -27,6 +27,7 @@ def build_agents(bus, generate_fn=None):
     from collect.agents.orchestrator import OrchestratorAgent
     from collect.agents.planning import PlanningAgent
     from collect.agents.response import ResponseAgent
+    from collect.agents.filecontext import FileContextAgent
     from collect.agents.retrieval import RetrievalAgent
     from collect.agents.workflow import WorkflowAgent
     from collect.grounding.facts import FactGrounder
@@ -66,6 +67,7 @@ def build_agents(bus, generate_fn=None):
         ResponseAgent(bus),
         LearningAgent(bus),
         WorkflowAgent(bus, generate_fn=generate_fn),
+        FileContextAgent(bus, embedder=embedder),
     ]
 
 

@@ -200,6 +200,7 @@ function connect() {
           ` · ${meta.duration_s ?? "?"}s` +
           (meta.tokens ? ` · ⚡ ${meta.tokens} tok @ ${meta.tok_per_s ?? "?"} tok/s` : "") +
           (meta.facts_used ? ` · 🔖 ${meta.facts_used} Fakt(en)` : "") +
+          (meta.file_chunks ? ` · 📄 ${(meta.file_paths || []).length} Datei(en)/${meta.file_chunks} Chunk(s)` : "") +
           (meta.rewritten_query ? ` · ↻ „${meta.rewritten_query}"` : "");
         d.appendChild(info);
       }

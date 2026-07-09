@@ -51,6 +51,7 @@ class LLMAgent(BaseAgent):
             "llm_request": self.on_request,
             "retrieval_response": self.on_contribution("retrieval"),
             "code_retrieval_response": self.on_contribution("code_retrieval"),
+            "file_response": self.on_contribution("file"),
         }
 
     _EARLY_TTL = 120.0  # Sek.: verwaiste Early-Beiträge (Request kam nie) verwerfen
@@ -107,9 +108,14 @@ class LLMAgent(BaseAgent):
             except Exception as e:
                 self.log.warning("%s: Fakt-Grounding fehlgeschlagen: %s", cid[:8], e)
 
-        zones = [c.get("zone") for c in state["contribs"].values()]
-        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts:
-            self.log.info("%s: alle Zonen FALLBACK, keine Fakten — LLM übersprungen", cid[:8])
+        # Dateiinhalt erdet die Antwort → nie überspringen. Sonst: alle
+        # Vault-Zonen FALLBACK und keine Fakten → generieren wäre Halluzination.
+        file_contrib = state["contribs"].get("file")
+        has_file = bool(file_contrib and file_contrib.get("chunks"))
+        zones = [c.get("zone") for k, c in state["contribs"].items()
+                 if k in ("retrieval", "code_retrieval")]
+        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts and not has_file:
+            self.log.info("%s: alle Zonen FALLBACK, keine Fakten/Datei — LLM übersprungen", cid[:8])
             self.publish("llm_response", "llm_response",
                          {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
             return
@@ -189,6 +195,17 @@ class LLMAgent(BaseAgent):
                           "behandeln, bei Widerspruch haben sie Vorrang vor den "
                           f"QUELLEN):\n{fl}\n\n")
 
+        # Direkt gelesener Dateiinhalt — per Definition geerdet, autoritativ
+        file_block = ""
+        file_contrib = state["contribs"].get("file")
+        if file_contrib and file_contrib.get("chunks"):
+            blocks = []
+            for c in file_contrib["chunks"]:
+                blocks.append(f"### {c['path']}\n{c['text']}")
+            file_block = ("DATEIINHALT (vom Nutzer adressiert — direkt gelesen, "
+                          "als gesichert behandeln; beantworte die Frage GESTÜTZT "
+                          "auf diesen Inhalt):\n" + "\n\n".join(blocks) + "\n\n")
+
         parts = []
         for i, doc in enumerate(docs[:TOP_DOCS], 1):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
@@ -208,6 +225,6 @@ class LLMAgent(BaseAgent):
                              + "\n".join(lines) + "\n\n")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
-        return (f"{history_block}{fact_block}QUELLEN:\n{context}\n\n"
+        return (f"{history_block}{fact_block}{file_block}QUELLEN:\n{context}\n\n"
                 f"FRAGE: {state['query']}\n\n"
-                f"Antworte gestützt auf die verbürgten Fakten und Quellen.")
+                f"Antworte gestützt auf Dateiinhalt, verbürgte Fakten und Quellen.")
