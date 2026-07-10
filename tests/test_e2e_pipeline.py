@@ -84,6 +84,9 @@ def test_fallback_query_suppresses_llm(pipeline, monkeypatch):
     # Schwellen so eng, dass der Mini-Vault-Treffer sicher FALLBACK ist
     monkeypatch.setattr(settings, "vault_trust_threshold", 0.1)
     monkeypatch.setattr(settings, "vault_soft_max_distance", 0.2)
+    # Auto-Web aus: dieser Test prüft die Suppression, nicht die Web-Recherche
+    # (unabhängig von einer lokalen .env mit COLLECT_WEB_SEARCH_AUTO=true)
+    monkeypatch.setattr(settings, "web_search_auto", False)
     out = _ask(pipeline, "voellig anderes unbekanntes thema", cid="e2e-3")
     data = out[0].data
     assert data["meta"]["zone"] == ZONE_FALLBACK

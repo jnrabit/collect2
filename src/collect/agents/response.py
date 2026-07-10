@@ -99,27 +99,10 @@ class ResponseAgent(BaseAgent):
             return
         state["finalized"] = True
 
-        # FALLBACK ohne Web? → Web-Recherche als letzter Rettungsanker.
-        # Nur wenn Web aktiviert ist und nicht bereits im Manifest stand
-        # (d.h. es war kein expliziter Web-Trigger).
-        retrieval = state["contribs"].get("retrieval")
-        code = state["contribs"].get("code_retrieval")
-        best = min((c.get("best_distance", NO_HIT_DISTANCE)
-                    for c in (retrieval, code) if c), default=NO_HIT_DISTANCE)
-        verdict = classify_zone(best if best < NO_HIT_DISTANCE else None)
-        if (settings.web_search_enabled and settings.web_search_auto
-                and verdict.zone == ZONE_FALLBACK
-                and "web" not in state["contribs"]
-                and "web" not in state["expected"]
-                and not state["contribs"].get("file", {}).get("chunks")):
-            self.log.info("%s: FALLBACK — Web-Recherche nachgefordert", cid[:8])
-            self.publish("web_request", "web_request",
-                         {"query": state["query"], "explicit": False}, cid + "_web")
-            state["expected"].add("web")
-            # Kurzer Extra-Deadline für die Web-Suche
-            self.bus.call_later(10.0, lambda: self._deadline(cid))
-            self._states[cid] = state
-            return
+        # Auto-Web wird jetzt vom LLMAgent VOR der Generierung ausgelöst (er
+        # kennt die Zone dort schon und synthetisiert die Web-Treffer mit) —
+        # kein Nachforder-Trigger mehr hier. Die web-Contribution landet
+        # trotzdem im state (für den 🌐-Footer).
 
         text, meta = synthesize(state)
         meta["finalize_reason"] = reason

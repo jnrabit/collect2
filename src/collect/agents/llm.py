@@ -16,7 +16,7 @@ from collect.agents.base import BaseAgent
 from collect.agents import ollama
 from collect.bus import Message
 from collect.config import settings
-from collect.retrieval.zones import ZONE_FALLBACK
+from collect.retrieval.zones import ZONE_FALLBACK, ZONE_GRAY
 
 TOP_DOCS = 4          # wie vibelike: Top-4-Quellen in den System-Prompt
 DOC_CHARS = 450
@@ -95,10 +95,40 @@ class LLMAgent(BaseAgent):
             self._maybe_generate(cid)
         return handler
 
+    def _should_auto_web(self, state: dict) -> bool:
+        """Auto-Web nur wenn der Vault UNSICHER ist (alle Beiträge GRAUZONE/
+        FALLBACK, kein TRUST-Treffer) — misst 'Vault nicht souverän', nicht
+        bloß 'gar nichts'. Einmal pro Anfrage."""
+        if not (settings.web_search_enabled and settings.web_search_auto):
+            return False
+        if state.get("web_requested") or "web" in state["contribs"]:
+            return False
+        # Dateikontext erdet die Antwort bereits → kein Web nötig
+        file_c = state["contribs"].get("file")
+        if file_c and file_c.get("chunks"):
+            return False
+        zones = [c.get("zone") for k, c in state["contribs"].items()
+                 if k in ("retrieval", "code_retrieval")]
+        return bool(zones) and all(z in (ZONE_GRAY, ZONE_FALLBACK) for z in zones)
+
     def _maybe_generate(self, cid: str) -> None:
         state = self._pending.get(cid)
         if state is None or not state["needs"] <= set(state["contribs"]):
             return
+
+        # Auto-Web: bei unsicherem Vault Web NACHFORDERN und DARAUF warten,
+        # damit es in einem Zug mitsynthetisiert wird (wie der explizite Pfad).
+        # Der LLM kennt die Retrieval-Zone hier bereits — anders als der frühere
+        # ResponseAgent-Trigger, der erst NACH dem (übersprungenen) LLM-Lauf
+        # feuerte und die Web-Treffer nie synthetisierte.
+        if self._should_auto_web(state):
+            state["web_requested"] = True
+            state["needs"].add("web")
+            self.progress(cid, "web_auto", "Vault unsicher — Web-Recherche…")
+            self.publish("web_request", "web_request",
+                         {"query": state["query"], "explicit": False}, cid)
+            return  # wartet auf web_response → _maybe_generate erneut
+
         del self._pending[cid]
 
         # Verbürgte Fakten (Ossifikat) — autoritatives Grounding
