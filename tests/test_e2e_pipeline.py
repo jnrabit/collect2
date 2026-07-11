@@ -20,7 +20,7 @@ from tests.test_service import _searcher
 
 
 def fake_llm(prompt, system="", timeout=None, **kw):
-    assert "QUELLEN:" in prompt
+    assert "QUELLEN" in prompt
     return "Geerdete Antwort basierend auf den Quellen."
 
 

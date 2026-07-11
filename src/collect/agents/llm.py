@@ -18,13 +18,13 @@ from collect.bus import Message
 from collect.config import settings
 from collect.retrieval.zones import ZONE_FALLBACK, ZONE_GRAY
 
-TOP_DOCS = 4          # wie vibelike: Top-4-Quellen in den System-Prompt
-DOC_CHARS = 450
-
 SYSTEM_PROMPT = (
-    "Du bist ein Wissensassistent. Beantworte die Frage des Nutzers präzise "
-    "und auf Deutsch, GESTÜTZT auf die bereitgestellten Quellen. Wenn die "
-    "Quellen die Frage nicht abdecken, sage das ehrlich. Erfinde keine Fakten."
+    "Du bist ein Wissensassistent. Beantworte die Frage des Nutzers auf Deutsch, "
+    "GESTÜTZT auf die bereitgestellten Quellen. Antworte AUSFÜHRLICH und gut "
+    "strukturiert: erkläre Zusammenhänge, gib relevante Details und Beispiele aus "
+    "den Quellen wieder statt nur Stichworte. Nenne die verwendeten Quellen — bei "
+    "Web-Quellen mit dem Link (URL). Wenn die Quellen die Frage nicht abdecken, "
+    "sage das ehrlich. Erfinde keine Fakten."
 )
 
 
@@ -239,21 +239,35 @@ class LLMAgent(BaseAgent):
                           "als gesichert behandeln; beantworte die Frage GESTÜTZT "
                           "auf diesen Inhalt):\n" + "\n\n".join(blocks) + "\n\n")
 
-        # Web-Recherche-Ergebnisse — frisch, aber nicht verifiziert
+        # Web-Recherche — mit Links (URLs). Bei EXPLIZITER Anfrage ist Web die
+        # primäre Quelle (der Nutzer wollte eine Web-Suche); bei Auto-Web
+        # ergänzend. Frühere Rahmung ('nicht verifiziert') wertete Web zu stark
+        # ab → der LLM ignorierte die Treffer und verankerte auf (irrelevanten)
+        # Vault-Docs.
         web_block = ""
+        web_explicit = False
         web_contrib = state["contribs"].get("web")
         if web_contrib and web_contrib.get("hits"):
+            web_explicit = bool(web_contrib.get("explicit"))
             wblocks = []
-            for h in web_contrib["hits"][:5]:
-                wblocks.append(f"[Web] {h.get('title', '?')}\n{h.get('content', '')[:600]}")
-            web_block = ("WEB-RECHERCHE (aktuell aus dem Internet — frisch, aber "
-                         "nicht verifiziert; kennzeichne Web-Informationen als "
-                         "solche):\n" + "\n\n".join(wblocks) + "\n\n")
+            for i, h in enumerate(web_contrib["hits"][:settings.llm_web_max], 1):
+                url = h.get("source", "")
+                wblocks.append(f"[W{i}] {h.get('title', '?')} — {url}\n"
+                               f"{h.get('content', '')[:settings.llm_web_chars]}")
+            if web_explicit:
+                web_block = ("WEB-RECHERCHE (der Nutzer hat explizit eine Web-Suche "
+                             "angefordert — beantworte die Frage GESTÜTZT auf diese "
+                             "aktuellen Web-Quellen und zitiere die verwendeten "
+                             "Links):\n" + "\n\n".join(wblocks) + "\n\n")
+            else:
+                web_block = ("WEB-RECHERCHE (aktuell aus dem Internet, ergänzend zu "
+                             "den Vault-Quellen — nutze sie und zitiere die Links):\n"
+                             + "\n\n".join(wblocks) + "\n\n")
 
         parts = []
-        for i, doc in enumerate(docs[:TOP_DOCS], 1):
+        for i, doc in enumerate(docs[:settings.llm_top_docs], 1):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
-            parts.append(f"[{i}] {title}:\n{doc.get('content', '')[:DOC_CHARS]}")
+            parts.append(f"[{i}] {title}:\n{doc.get('content', '')[:settings.llm_doc_chars]}")
 
         # Gesprächskontext: letzte Turns, Antworten gekürzt — genug für
         # Rückbezüge ("und wie genau?"), ohne den Prompt zu fluten
@@ -269,6 +283,14 @@ class LLMAgent(BaseAgent):
                              + "\n".join(lines) + "\n\n")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
-        return (f"{history_block}{fact_block}{file_block}{web_block}QUELLEN:\n{context}\n\n"
+        vault_block = f"QUELLEN (lokaler Vault):\n{context}\n\n"
+        # Bei expliziter Web-Anfrage: Web VOR den Vault-Quellen (primär);
+        # sonst Vault zuerst, Web ergänzend danach.
+        if web_explicit:
+            body = f"{web_block}{vault_block}"
+        else:
+            body = f"{vault_block}{web_block}"
+        return (f"{history_block}{fact_block}{file_block}{body}"
                 f"FRAGE: {state['query']}\n\n"
-                f"Antworte gestützt auf Dateiinhalt, verbürgte Fakten, Web-Recherche und Quellen.")
+                f"Antworte ausführlich und gestützt auf die obigen Quellen; "
+                f"nenne die verwendeten Web-Links.")

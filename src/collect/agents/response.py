@@ -209,9 +209,20 @@ def synthesize(state: dict) -> tuple[str, dict]:
         footer.append(f"📄 Datei: {shown} ({file_contrib.get('chunk_count', 0)} Chunk(s))")
     web_contrib = contribs.get("web")
     if web_contrib and web_contrib.get("count"):
-        footer.append(f"🌐 Web-Recherche: {web_contrib['count']} Treffer")
+        # eindeutige Quell-URLs (max 4) als anklickbare Links unter der Antwort
+        urls, seen = [], set()
+        for h in web_contrib.get("hits", []):
+            u = h.get("source", "")
+            if u and u not in seen:
+                seen.add(u)
+                urls.append(u)
+        line = f"🌐 Web-Recherche: {web_contrib['count']} Treffer"
+        if urls:
+            line += "\n" + "\n".join(f"   • {u}" for u in urls[:4])
+        footer.append(line)
         meta["web_count"] = web_contrib["count"]
         meta["web_explicit"] = web_contrib.get("explicit", False)
+        meta["web_urls"] = urls[:4]
     if facts_used:
         footer.append(f"🔖 {facts_used} verbürgte(r) Fakt(en) als Grounding")
     if retrieval and retrieval.get("count"):

@@ -256,6 +256,12 @@ class CollectSettings(BaseSettings):
     # Interim-Streaming-Batching (Bus-Last vs. gefühlte Latenz)
     llm_flush_chars: int = 80
     llm_flush_secs: float = 0.15
+    # Antwort-Tiefe: mehr/längere Quellen im Prompt → ausführlichere Synthese,
+    # aber längerer Prompt (langsamer, mehr Kontext). Richtung "C" (tief).
+    llm_doc_chars: int = Field(default=1500, description="Zeichen pro Vault-Quelle im Prompt")
+    llm_top_docs: int = Field(default=8, description="Anzahl Quellen im Prompt")
+    llm_web_chars: int = Field(default=1500, description="Zeichen pro Web-Treffer im Prompt")
+    llm_web_max: int = Field(default=8, description="max. Web-Treffer im Prompt")
     rewrite_enabled: bool = Field(
         default=True,
         description="Referenzielle Folgefragen vor dem Retrieval zu "
