@@ -94,3 +94,54 @@ def test_ws_session_accumulates_history(monkeypatch, tmp_path):
 
     assert seen_histories[0] == []
     assert seen_histories[1] == [{"q": "Frage eins", "a": "Antwort auf Frage eins"}]
+
+
+# ── Relevanz-gesteuerte Historie (Themenwechsel nicht kontaminieren) ──────
+
+def test_orchestrator_marks_referential():
+    bus = InMemoryBus(prefix="test.")
+    emb = FakeEmbedder()
+    OrchestratorAgent(bus, CodeRouter(emb.embed_one, centroid=None),
+                      rewrite_fn=lambda q, h: {"applied": False, "rewritten": q}).start()
+    hist = [{"q": "Was ist TLS?", "a": "Ein Protokoll."}]
+    # Rückbezug (Pronomen, kurz) → referential=True
+    bus.publish("user_query", Message(
+        type="user_query", data={"query": "und wofür nutzt man das?", "history": hist},
+        correlation_id="r1"))
+    # Themenwechsel (eigenes Substantiv) → referential=False
+    bus.publish("user_query", Message(
+        type="user_query", data={"query": "erkläre mir Quantencomputer im detail bitte", "history": hist},
+        correlation_id="r2"))
+    reqs = {m.correlation_id: m for ch, m in bus.published if ch == "llm_request"}
+    assert reqs["r1"].data["referential"] is True
+    assert reqs["r2"].data["referential"] is False
+
+
+def _llm_prompt_for(referential, history):
+    from collect.agents.llm import LLMAgent
+    prompts = []
+    bus = InMemoryBus(prefix="t.")
+    LLMAgent(bus, generate_fn=lambda p, system="", on_token=None, **k: (prompts.append(p) or ("ok", {}))).start()
+    bus.publish("llm_request", Message(
+        type="llm_request",
+        data={"query": "q", "needs": ["retrieval"], "history": history,
+              "referential": referential},
+        correlation_id="p1"))
+    bus.publish("retrieval_response", Message(
+        type="retrieval_response",
+        data={"zone": "TRUST", "best_distance": 40.0, "count": 0, "hits": []},
+        correlation_id="p1"))
+    return prompts[0]
+
+
+def test_referential_history_framing():
+    hist = [{"q": "Was ist TLS?", "a": "Ein Protokoll."}]
+    p = _llm_prompt_for(True, hist)
+    assert "bezieht sich darauf" in p
+    assert "Was ist TLS?" in p
+
+
+def test_topic_switch_history_gets_ignore_instruction():
+    hist = [{"q": "Was ist TLS?", "a": "Ein Protokoll."}]
+    p = _llm_prompt_for(False, hist)
+    assert "IGNORIERE" in p and "KEINE erzwungene Verbindung" in p

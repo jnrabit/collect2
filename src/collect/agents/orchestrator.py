@@ -190,6 +190,11 @@ class OrchestratorAgent(BaseAgent):
         # Retrieval-Beiträge, aber so entsteht das Race gar nicht erst),
         # dann die Retrieval-Requests parallel.
         request = {"query": effective, "subqueries": subqueries, "route": route}
+        # referential: bezieht sich die Frage auf den Vorkontext (Rückbezug)
+        # oder ist sie ein eigenständiger Themenwechsel? Steuert, wie stark der
+        # LLM die Historie nutzt (verhindert Themen-Kontamination).
+        from collect.retrieval.rewriter import is_referential
+        referential = bool(history) and is_referential(query)
         self.publish("llm_request", "llm_request", {
             **request,
             "original_query": query,
@@ -197,6 +202,7 @@ class OrchestratorAgent(BaseAgent):
             # Gesprächskontext: nur für die Synthese — Retrieval/Routing
             # laufen auf der aktuellen Query
             "history": msg.data.get("history") or [],
+            "referential": referential,
         }, cid)
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:

@@ -67,6 +67,7 @@ class LLMAgent(BaseAgent):
             "needs": set(msg.data.get("needs") or ["retrieval"]),
             "contribs": self._early.pop(cid, {}),
             "history": msg.data.get("history") or [],
+            "referential": bool(msg.data.get("referential")),
         }
         self._maybe_generate(cid)
 
@@ -269,8 +270,11 @@ class LLMAgent(BaseAgent):
             title = doc.get("title") or doc.get("doc_id", f"Quelle {i}")
             parts.append(f"[{i}] {title}:\n{doc.get('content', '')[:settings.llm_doc_chars]}")
 
-        # Gesprächskontext: letzte Turns, Antworten gekürzt — genug für
-        # Rückbezüge ("und wie genau?"), ohne den Prompt zu fluten
+        # Gesprächskontext relevanz-gesteuert: bei einem Rückbezug ("und wofür?")
+        # voll nutzen; bei einem Themenwechsel (eigenständige Frage) nur als
+        # Hintergrund mit klarer Ignorier-Anweisung — sonst blutet das alte
+        # Thema in eine unverwandte Antwort (beobachtet: Quanten-Kontext in
+        # einer Verdachtsfalle-Frage).
         history_block = ""
         history = state.get("history") or []
         if history:
@@ -278,9 +282,15 @@ class LLMAgent(BaseAgent):
             for turn in history[-3:]:
                 lines.append(f"Nutzer: {str(turn.get('q', ''))[:300]}")
                 lines.append(f"Du: {str(turn.get('a', ''))[:500]}")
-            history_block = ("BISHERIGES GESPRÄCH (für Rückbezüge — die "
-                             "aktuelle FRAGE hat Vorrang):\n"
-                             + "\n".join(lines) + "\n\n")
+            convo = "\n".join(lines)
+            if state.get("referential"):
+                history_block = ("BISHERIGES GESPRÄCH (die aktuelle FRAGE bezieht "
+                                 "sich darauf — nutze den Kontext):\n" + convo + "\n\n")
+            else:
+                history_block = ("BISHERIGES GESPRÄCH (nur Hintergrund): Falls die "
+                                 "FRAGE ein ANDERES Thema ist, IGNORIERE dieses "
+                                 "Gespräch vollständig und stelle KEINE erzwungene "
+                                 "Verbindung her.\n" + convo + "\n\n")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
         vault_block = f"QUELLEN (lokaler Vault):\n{context}\n\n"
