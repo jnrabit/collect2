@@ -69,7 +69,7 @@ def build_agents(bus, generate_fn=None):
         LearningAgent(bus),
         WorkflowAgent(bus, generate_fn=generate_fn),
         FileContextAgent(bus, embedder=embedder),
-        WebSearchAgent(bus),
+        WebSearchAgent(bus, embed_fn=embedder.embed_one),
     ]
 
 

@@ -203,6 +203,7 @@ class OrchestratorAgent(BaseAgent):
             # laufen auf der aktuellen Query
             "history": msg.data.get("history") or [],
             "referential": referential,
+            "rewritten_query": rewritten_query,  # für kontext-aufgelöste Auto-Web-Suche
         }, cid)
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:
@@ -214,11 +215,14 @@ class OrchestratorAgent(BaseAgent):
             self.publish("file_request", "file_request",
                          {"query": query, "paths": file_paths}, cid)
 
-        # Web-Recherche: explizit immer, bei FALLBACK wird sie später
-        # vom ResponseAgent nachgefordert (zweistufig).
+        # Web-Recherche: expliziter Trigger hier; Auto-Web (bei GRAUZONE/
+        # FALLBACK) fordert der LLMAgent VOR der Generierung an (er kennt die
+        # Zone dort schon). Such-Query nutzt bei Rückbezug die umgeschriebene
+        # Query (aufgelöster Kontext), sonst das Original.
         if explicit_web:
+            web_query = rewritten_query or query
             self.publish("web_request", "web_request",
-                         {"query": query, "explicit": True}, cid)
+                         {"query": web_query, "explicit": True}, cid)
             if "web" not in expected:
                 expected.append("web")
                 self.publish("response_manifest", "response_manifest", {

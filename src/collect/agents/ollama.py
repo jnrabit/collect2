@@ -29,6 +29,9 @@ def _base_options(temperature: float) -> dict:
         "temperature": temperature,
         "stop": _STOP_SEQUENCES,
         "num_predict": _NUM_PREDICT_CAP,
+        # OHNE num_ctx nutzt Ollama nur 4096 Tokens (nicht die 32k des Modells)
+        # → tiefe Prompts würden still abgeschnitten, die Tiefe verpufft.
+        "num_ctx": settings.llm_num_ctx,
     }
 
 
@@ -71,7 +74,8 @@ def generate(prompt: str, system: str = "", model: Optional[str] = None,
         # validem JSON nicht vor, und ein stop mitten im JSON würde es
         # zerreißen) + höheres num_predict (2048), da lange JSONs sonst
         # abgeschnitten würden. Ollamas format-Grammar erzwingt den Abschluss.
-        payload["options"] = {"temperature": temperature, "num_predict": 2048}
+        payload["options"] = {"temperature": temperature, "num_predict": 2048,
+                              "num_ctx": settings.llm_num_ctx}
     resp = requests.post(
         f"{settings.ollama_url}/api/generate",
         json=payload,

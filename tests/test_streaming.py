@@ -200,3 +200,54 @@ def test_generate_sanitizes_output():
     with mock.patch.object(ollama.requests, "post",
                            return_value=FakeResponse({"response": "Fertig.<|im_end|>müll"})):
         assert ollama.generate("frage") == "Fertig."
+
+
+# ── num_ctx + Truncation-Guard (Review #4) ────────────────────────────────
+
+def test_generate_sets_num_ctx():
+    captured = {}
+
+    def fake_post(url, json=None, **kw):
+        captured.update(json)
+        return FakeResponse({"response": "ok"})
+
+    with mock.patch.object(ollama.requests, "post", side_effect=fake_post):
+        ollama.generate("frage")
+    # OHNE num_ctx würde Ollama auf 4096 abschneiden → Tiefe verpufft
+    assert captured["options"]["num_ctx"] == ollama.settings.llm_num_ctx
+
+
+def test_build_prompt_truncation_guard(monkeypatch):
+    from collect.agents.llm import LLMAgent
+    from collect.bus import InMemoryBus
+    monkeypatch.setattr(ollama.settings, "llm_prompt_char_budget", 2000)
+    monkeypatch.setattr(ollama.settings, "llm_doc_chars", 100000)  # Guard soll limitieren
+    agent = LLMAgent(InMemoryBus(prefix="t."))
+    huge = [{"title": "Doc", "content": "X" * 5000, "distance": 10, "doc_id": "d1"}]
+    state = {"query": "wichtige FRAGE", "contribs": {
+        "retrieval": {"zone": "TRUST", "hits": huge, "best_distance": 10}}}
+    prompt = agent._build_prompt(state, facts=None)
+    assert len(prompt) < 3000                    # gekürzt aufs Budget
+    assert "wichtige FRAGE" in prompt            # Frage bleibt erhalten
+    assert "(gekürzt)" in prompt
+
+
+def test_llm_auto_web_uses_rewritten_query(monkeypatch):
+    from collect.config import settings as s
+    monkeypatch.setattr(s, "web_search_enabled", True)
+    monkeypatch.setattr(s, "web_search_auto", True)
+    from collect.agents.llm import LLMAgent
+    from collect.bus import InMemoryBus
+    bus = InMemoryBus(prefix="t.")
+    LLMAgent(bus, generate_fn=lambda p, system="", on_token=None, **k: ("ok", {})).start()
+    bus.publish("llm_request", Message(
+        type="llm_request",
+        data={"query": "und was gibt es dazu?", "needs": ["retrieval"],
+              "rewritten_query": "was gibt es zu Quantencomputing aktuell"},
+        correlation_id="rw"))
+    bus.publish("retrieval_response", Message(
+        type="retrieval_response",
+        data={"zone": "GRAUZONE", "best_distance": 55.0, "count": 1, "hits": []},
+        correlation_id="rw"))
+    web_req = [m for ch, m in bus.published if ch == "web_request"][0]
+    assert web_req.data["query"] == "was gibt es zu Quantencomputing aktuell"

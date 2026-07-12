@@ -68,6 +68,7 @@ class LLMAgent(BaseAgent):
             "contribs": self._early.pop(cid, {}),
             "history": msg.data.get("history") or [],
             "referential": bool(msg.data.get("referential")),
+            "rewritten_query": msg.data.get("rewritten_query"),
         }
         self._maybe_generate(cid)
 
@@ -126,8 +127,11 @@ class LLMAgent(BaseAgent):
             state["web_requested"] = True
             state["needs"].add("web")
             self.progress(cid, "web_auto", "Vault unsicher — Web-Recherche…")
+            # Bei Rückbezug die umgeschriebene (kontext-aufgelöste) Query suchen,
+            # nicht das bloße "und was gibt es dazu?".
+            web_query = state.get("rewritten_query") or state["query"]
             self.publish("web_request", "web_request",
-                         {"query": state["query"], "explicit": False}, cid)
+                         {"query": web_query, "explicit": False}, cid)
             return  # wartet auf web_response → _maybe_generate erneut
 
         del self._pending[cid]
@@ -293,14 +297,21 @@ class LLMAgent(BaseAgent):
                                  "Verbindung her.\n" + convo + "\n\n")
 
         context = "\n\n".join(parts) if parts else "(keine Quellen verfügbar)"
+
+        # Truncation-Guard: alles außer den Vault-Quellen (Frage, Instruktion,
+        # Fakten, Datei, Web, History) hat Vorrang; nur die Vault-Quellen werden
+        # gekürzt, falls das Budget überschritten wird. num_ctx=16384 macht das
+        # im Normalfall unnötig — reines Sicherheitsnetz gegen Overflow.
+        head = f"{history_block}{fact_block}{file_block}"
+        tail = (f"\n\nFRAGE: {state['query']}\n\n"
+                f"Antworte ausführlich und gestützt auf die obigen Quellen; "
+                f"nenne die verwendeten Web-Links.")
+        fixed_len = len(head) + len(web_block) + len(tail) + 40
+        vault_budget = max(0, settings.llm_prompt_char_budget - fixed_len)
+        if len(context) > vault_budget:
+            context = context[:vault_budget] + "\n…(gekürzt)"
         vault_block = f"QUELLEN (lokaler Vault):\n{context}\n\n"
         # Bei expliziter Web-Anfrage: Web VOR den Vault-Quellen (primär);
         # sonst Vault zuerst, Web ergänzend danach.
-        if web_explicit:
-            body = f"{web_block}{vault_block}"
-        else:
-            body = f"{vault_block}{web_block}"
-        return (f"{history_block}{fact_block}{file_block}{body}"
-                f"FRAGE: {state['query']}\n\n"
-                f"Antworte ausführlich und gestützt auf die obigen Quellen; "
-                f"nenne die verwendeten Web-Links.")
+        body = f"{web_block}{vault_block}" if web_explicit else f"{vault_block}{web_block}"
+        return f"{head}{body}{tail.lstrip()}"
