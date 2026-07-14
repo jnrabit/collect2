@@ -38,8 +38,10 @@ class RetrievalAgent(BaseAgent):
 
         hits, best = [], None
         if self.searcher.store.ready:
+            profile = msg.data.get("profile")
             vecs = list(self.embedder.embed(subqueries))
-            merged = self.searcher.search(vecs, top_k=30, query_text=query)
+            merged = self.searcher.search(vecs, top_k=30, query_text=query,
+                                          profile=profile)
             hits = self.searcher.hits(merged, MAX_HITS)
             best = self.searcher.best_distance(merged)
 

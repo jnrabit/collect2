@@ -74,6 +74,12 @@
     cursor: pointer;
   }
   button:disabled { opacity: .45; cursor: default; }
+  select {
+    padding: 10px 12px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; font: inherit;
+    cursor: pointer; min-width: 110px;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -83,6 +89,14 @@
 </header>
 <div id="log"></div>
 <form id="form">
+  <select id="profile" title="Retrieval-Profil">
+    <option value="">auto</option>
+    <option value="precise">präzise</option>
+    <option value="balanced">balanced</option>
+    <option value="broad">breit</option>
+    <option value="resonant">resonant</option>
+    <option value="chaos">chaos</option>
+  </select>
   <input id="input" placeholder="Frage stellen… (Plan-Keywords starten die Kaskade)"
          autocomplete="off" autofocus>
   <button id="send" type="submit">Senden</button>
@@ -92,6 +106,7 @@ const log = document.getElementById("log");
 const form = document.getElementById("form");
 const input = document.getElementById("input");
 const send = document.getElementById("send");
+const profile = document.getElementById("profile");
 const conn = document.getElementById("conn");
 let ws = null, busy = false, progressEl = null, streamEl = null;
 
@@ -104,7 +119,11 @@ function el(cls, text) {
   return d;
 }
 
-function setBusy(b) { busy = b; send.disabled = b; input.disabled = b; if (!b) input.focus(); }
+function setBusy(b) { busy = b; send.disabled = b; input.disabled = b; profile.disabled = b; if (!b) input.focus(); }
+// Profil aus localStorage wiederherstellen
+const saved = localStorage.getItem("collect2-profile");
+if (saved) profile.value = saved;
+profile.addEventListener("change", () => localStorage.setItem("collect2-profile", profile.value));
 
 function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -219,10 +238,11 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = input.value.trim();
   if (!q || busy || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const p = profile.value;
   el("msg user", q);
   input.value = "";
   setBusy(true);
-  ws.send(JSON.stringify({ query: q }));
+  ws.send(JSON.stringify({ query: p ? `[${p}] ${q}` : q }));
 });
 
 connect();

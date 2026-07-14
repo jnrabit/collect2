@@ -16,6 +16,7 @@ from __future__ import annotations
 from collect.agents.base import BaseAgent
 from collect.bus import Message
 from collect.config import settings
+from collect.retrieval.profiles import parse_profile_override, resolve_profile
 from collect.retrieval.router import ROUTE_GENERAL
 from collect.search.web import is_web_request
 
@@ -84,6 +85,10 @@ class OrchestratorAgent(BaseAgent):
 
     def on_user_query(self, msg: Message) -> None:
         query = (msg.data.get("query") or "").strip()
+        # Profil-Prefix ([precise] Frage?) SOFORT abtrennen — er ist eine
+        # UI-Direktive, kein Inhalt, und darf nicht in Rewrite/Übersetzung/
+        # Routing/Embedding/LLM-Prompt landen.
+        query, profile_override = parse_profile_override(query)
         cid = msg.correlation_id
         if not query:
             return
@@ -158,6 +163,15 @@ class OrchestratorAgent(BaseAgent):
         route, score = self.router.classify(effective)
         self.progress(cid, "routing", f"{route} (cosine={score:.3f})")
 
+        # 2b. Retrieval-Profil: Prefix-Override > konfiguriert > Auto-Detect.
+        # Auto-Detect läuft auf der Original-Query (deutsche Signale), nicht
+        # auf der übersetzten effective-Query.
+        profile_name = profile_override or resolve_profile(
+            query, settings.retrieval_profile)
+        profile = settings.get_profile(profile_name)
+        if profile_override or profile_name != "balanced":
+            self.progress(cid, "profile", profile_name)
+
         # 3. Decompose (Heuristik-gated, best-effort)
         subqueries = [effective]
         if self.decomposer:
@@ -189,7 +203,8 @@ class OrchestratorAgent(BaseAgent):
         # 5. Requests. llm_request ZUERST (der LLMAgent puffert zwar frühe
         # Retrieval-Beiträge, aber so entsteht das Race gar nicht erst),
         # dann die Retrieval-Requests parallel.
-        request = {"query": effective, "subqueries": subqueries, "route": route}
+        request = {"query": effective, "subqueries": subqueries, "route": route,
+                   "profile": profile}
         # referential: bezieht sich die Frage auf den Vorkontext (Rückbezug)
         # oder ist sie ein eigenständiger Themenwechsel? Steuert, wie stark der
         # LLM die Historie nutzt (verhindert Themen-Kontamination).

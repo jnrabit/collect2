@@ -134,13 +134,14 @@ class VaultSearcher:
                                     thompson_seed=thompson_seed)
 
     def search(self, query_vecs: list, top_k: int,
-               query_text: Optional[str] = None) -> list[tuple]:
+               query_text: Optional[str] = None,
+               profile: Optional[dict] = None) -> list[tuple]:
         """Sucht pro Query-Vektor, fusioniert per RRF, rerankt lexikalisch
         (falls query_text) → [(doc_id, dist), …]. Die Zonen-Klassifikation
         gehört auf min(dist) DIESER Liste — nicht auf die getrimmten Hits."""
         if not self.store.ready:
             return []
-        rankings = [self.chaos.search(v, top_k=top_k) for v in query_vecs]
+        rankings = [self.chaos.search(v, top_k=top_k, profile=profile) for v in query_vecs]
         rankings = [r for r in rankings if r]
         if not rankings:
             return []

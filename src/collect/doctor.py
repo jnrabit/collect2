@@ -66,6 +66,7 @@ _CORE_MODULES = [
     "collect.workflow.idioms",
     "collect.workflow.validator",
     "collect.workflow.sandbox",
+    "collect.retrieval.profiles",
     "collect.harvest.arxiv",
     "collect.harvest.rfc",
 ]

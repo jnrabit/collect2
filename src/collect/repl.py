@@ -26,8 +26,9 @@ from pathlib import Path
 from collect.client import ask
 from collect.config import settings
 
-HELP = ("Befehle: /status  /review  /facts  /session  /help  /quit — "
-        "alles andere geht als Frage an den Stack.")
+HELP = ("Befehle: /status  /review  /facts  /session  /retrieval  /help  /quit — "
+        "alles andere geht als Frage an den Stack. "
+        "Prefix [profil] forced den Retrieval-Modus (z.B. [precise] Was ist X?).")
 
 
 def _open_store():
@@ -158,6 +159,44 @@ def cmd_session(args: str, context: dict, print_fn=print) -> str:
             "/session delete <id>  /session summarize")
 
 
+def cmd_retrieval(args: str, context: dict) -> str:
+    """Zeigt/setzt das Retrieval-Profil dieser REPL-Session.
+
+    Das Retrieval läuft im SERVICE-Prozess — Settings hier im Client zu
+    mutieren wäre wirkungslos. Stattdessen merkt sich die REPL das Profil
+    und sendet es als [profil]-Prefix mit jeder Frage (derselbe Mechanismus
+    wie der Profil-Selector der Web-UI)."""
+    from collect.config import settings
+
+    profiles = list(settings.retrieval_profiles.keys())
+    active = context.get("profile") or "auto"
+    if not args:
+        return (f"Session-Profil: {active}\n"
+                f"Verfügbar: {', '.join(profiles)}, auto\n"
+                f"Setzen: /retrieval set <profil> — Einmalig: [profil] Frage?")
+
+    parts = args.split()
+    sub = parts[0]
+
+    if sub == "set" and len(parts) > 1:
+        name = parts[1].lower()
+        if name == "auto":
+            context.pop("profile", None)
+            return "✓ Session-Profil zurück auf 'auto' (Service erkennt selbst)."
+        if name in profiles:
+            context["profile"] = name
+            return (f"✓ Session-Profil '{name}' — wird als [{name}]-Prefix "
+                    f"mit jeder Frage gesendet.")
+        return f"✗ Unbekanntes Profil: {name}. Verfügbar: {', '.join(profiles)}, auto"
+
+    if sub == "test":
+        rest = " ".join(parts[1:]) or "Was ist Quantencomputing?"
+        from collect.retrieval.profiles import auto_detect
+        return f"Query: {rest[:60]}\nAuto-Detect → {auto_detect(rest)}"
+
+    return f"/retrieval [set <profil>] [test <query>] — Profile: {', '.join(profiles)}"
+
+
 def repl(input_fn=input, print_fn=print) -> int:
     print_fn(f"{settings.display_name} REPL — {HELP}")
     _session_store = _store()
@@ -183,12 +222,19 @@ def repl(input_fn=input, print_fn=print) -> int:
         elif line.startswith("/session"):
             args = line[len("/session"):].strip()
             print_fn(cmd_session(args, context, print_fn))
+        elif line.startswith("/retrieval"):
+            args = line[len("/retrieval"):].strip()
+            print_fn(cmd_retrieval(args, context))
         elif line.startswith("/"):
             print_fn(f"Unbekannter Befehl: {line} — {HELP}")
         else:
             sid = context.get("session_id")
-            result = ask(line, show_progress=True, history=list(context["history"]),
-                         session_id=sid)
+            # Session-Profil als Prefix (Service strippt ihn im Orchestrator)
+            outgoing = line
+            if context.get("profile") and not line.startswith("["):
+                outgoing = f"[{context['profile']}] {line}"
+            result = ask(outgoing, show_progress=True,
+                         history=list(context["history"]), session_id=sid)
             print_fn("\n" + result.get("text", ""))
             meta = result.get("meta", {})
             if meta and not meta.get("timeout"):

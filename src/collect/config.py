@@ -291,6 +291,13 @@ class CollectSettings(BaseSettings):
     )
 
     # ── Retrieval-Verhalten ─────────────────────────────────────────────
+    retrieval_profile: str = Field(
+        default="auto",
+        description="Retrieval-Profil: auto (KI erkennt), precise, balanced, "
+                    "broad, resonant, chaos, adaptive. 'auto' analysiert die "
+                    "Query und wählt selbst; ein fester Name forciert das Profil. "
+                    "Prefix-Override im Query-Text ([precise] etc.) hat Vorrang.",
+    )
     retrieval_deterministic: bool = Field(
         default=True,
         description="Reproduzierbares Scoring: Thompson-Posterior-MEAN statt "
@@ -346,6 +353,35 @@ class CollectSettings(BaseSettings):
             self.triplet_log_file = self.log_dir / "triplets.jsonl"
         if self.workflow_repo is None:
             self.workflow_repo = self.executor_workspace / "repo"
+
+
+    @property
+    def retrieval_profiles(self) -> dict:
+        """Die 6 benannten Profile — α(cosine), β(thompson), γ(resonance),
+        δ(exploration), warp(Bool), sampling(Bool). 'sampling' steuert ob
+        Thompson einen Zufallswert oder den Posterior-Mean liefert."""
+        return {
+            "precise":  {"alpha": 0.95, "beta": 0.0,  "gamma": 0.0,  "delta": 0.05,
+                         "warp": False, "sampling": False},
+            "balanced": {"alpha": 0.80, "beta": 0.05, "gamma": 0.10, "delta": 0.05,
+                         "warp": False, "sampling": False},
+            "broad":    {"alpha": 0.55, "beta": 0.15, "gamma": 0.10, "delta": 0.20,
+                         "warp": False, "sampling": True},
+            "resonant": {"alpha": 0.60, "beta": 0.05, "gamma": 0.30, "delta": 0.05,
+                         "warp": False, "sampling": False},
+            "chaos":    {"alpha": 0.50, "beta": 0.20, "gamma": 0.20, "delta": 0.10,
+                         "warp": True,  "sampling": True},
+            "adaptive": {"alpha": 0.0,  "beta": 0.0,  "gamma": 0.0,  "delta": 0.0,
+                         "warp": False, "sampling": False,
+                         "adaptive": True},
+        }
+
+    def get_profile(self, name: str) -> dict:
+        """Validierten Profil-Lookup — 'auto' oder ungültig → balanced."""
+        profiles = self.retrieval_profiles
+        if name in profiles:
+            return profiles[name]
+        return profiles["balanced"]
 
 
 settings = CollectSettings()

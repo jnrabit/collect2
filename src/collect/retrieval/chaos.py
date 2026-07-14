@@ -128,21 +128,18 @@ class ChaosRetrieval:
         self.warp = RiemannianWarp(embed_dim, lorenz_dims)
         self.thompson = ThompsonSampler(seed=thompson_seed)
         if self.deterministic:
-            # Cosine dominiert: spreizt relevante vs. irrelevante Queries
-            # (Benchmark: bessere Zonen-Trennung); Thompson/Resonanz/
-            # Exploration bleiben als milde Lern-Nudges erhalten.
             self.alpha, self.beta, self.gamma, self.delta = 0.8, 0.05, 0.1, 0.05
         else:
-            # Basis-Gewichte des Alt-Systems (entropie-moduliert in search)
             self.alpha, self.beta, self.gamma, self.delta = 0.5, 0.2, 0.2, 0.1
         self._last_retrieved: list = []
         self._search_count: int = 0
+        self._adaptive_count: int = 0
 
-    def search(self, query_vec: np.ndarray, top_k: int = 30) -> list[tuple]:
-        """Returns Liste von (doc_id, distance), distance = (1-score)*100."""
+    def search(self, query_vec: np.ndarray, top_k: int = 30,
+               profile: Optional[dict] = None) -> list[tuple]:
+        """→ [(doc_id, distance)]. profile überschreibt die Init-Gewichte
+        (null → Init-Gewichte / Settings)."""
         self._search_count += 1
-        # Adaption alle 50 Aufrufe — Counter VOR frühen Returns, damit sich das
-        # Intervall an Aufrufe (nicht nur erfolgreiche Suchen) bindet.
         if self._search_count % 50 == 0:
             self._adapt_lorenz()
 
@@ -159,14 +156,31 @@ class ChaosRetrieval:
             lorenz_state = s
             entropy = min(1.0, s.get("entropy", 4.0) / 8.0)
 
-        # Deterministischer Modus: Warp bleibt Identität (reine Cosine),
-        # Thompson liefert den Posterior-Mean statt einer Zufalls-Ziehung.
-        if self.deterministic:
-            warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
-            thomp_arr = self.thompson.batch_mean(id_map)
-        else:
-            # Chaos-Modus des Alt-Systems: Resonanz-Kraft → Warp (8D-Lorenz;
-            # z2/w2 liefert die Engine nicht → Default 0)
+        use_warp = self.deterministic is False
+        use_sample = not self.deterministic
+        a, b, g, d = self.alpha, self.beta, self.gamma, self.delta
+
+        if profile:
+            if profile.get("adaptive"):
+                self._adaptive_count += 1
+                if self._adaptive_count < 20:
+                    a, b, g, d = 0.55, 0.15, 0.10, 0.20
+                    use_sample = True
+                elif self._adaptive_count < 80:
+                    a, b, g, d = 0.70, 0.08, 0.15, 0.07
+                    use_sample = False
+                else:
+                    a, b, g, d = 0.90, 0.02, 0.05, 0.03
+                    use_sample = False
+            else:
+                a = profile.get("alpha", a)
+                b = profile.get("beta", b)
+                g = profile.get("gamma", g)
+                d = profile.get("delta", d)
+                use_warp = profile.get("warp", use_warp)
+                use_sample = profile.get("sampling", use_sample)
+
+        if use_warp:
             r_force = None
             if self.field:
                 lp = np.array([
@@ -178,10 +192,12 @@ class ChaosRetrieval:
                 r_force = self.field.get_lorenz_force(lp)
             self.warp.update(lorenz_state, r_force)
             warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
-            thomp_arr = self.thompson.batch_sample(id_map)
+            thomp_arr = self.thompson.batch_sample(id_map) if use_sample else self.thompson.batch_mean(id_map)
+        else:
+            warp_arr = self.warp.score(query_vec.astype(np.float32), doc_matrix)
+            thomp_arr = self.thompson.batch_sample(id_map) if use_sample else self.thompson.batch_mean(id_map)
         explor_arr = self.thompson.exploration_scores(id_map)
 
-        # Resonanz: nur Top-20 als Anker (argpartition: O(n))
         n_anchor = min(20, n)
         top20_indices = np.argpartition(warp_arr, -n_anchor)[-n_anchor:]
         top20_indices = top20_indices[np.argsort(warp_arr[top20_indices])[::-1]]
@@ -191,25 +207,15 @@ class ChaosRetrieval:
             boosts = self.field.get_resonance_boost(id_map, top20_ids)
             if boosts:
                 res_arr = np.array([boosts.get(d, 0.0) for d in id_map], dtype=np.float32)
-                # Absolute Sättigung raw/(raw+3) statt Max-Normalisierung.
-                # Die Normalisierung blies die ERSTE Ko-Aktivierung zum vollen
-                # γ-Boost auf (=20 Distanzpunkte Sprung zwischen zwei Läufen
-                # derselben Query; Nonsens rutschte so in TRUST). Cap 0.5:
-                # Gelerntes darf nudgen (≤ halber γ-Boost), nie über eine
-                # ganze Zone teleportieren.
                 res_arr = np.minimum(res_arr / (res_arr + 3.0), 0.5)
 
-        if self.deterministic:
-            # Statische Gewichte — keine Entropie-Modulation
-            a, b, g, d = self.alpha, self.beta, self.gamma, self.delta
-        else:
-            # Entropie-modulierte Koeffizienten
+        if use_warp and self.deterministic is False:
             exp_mode = entropy
             expl_mode = 1.0 - entropy
-            a = self.alpha * expl_mode + 0.3 * exp_mode
-            b = self.beta * exp_mode + 0.1 * expl_mode
-            g = self.gamma * expl_mode + 0.1 * exp_mode
-            d = self.delta * exp_mode + 0.05 * expl_mode
+            a = a * expl_mode + 0.3 * exp_mode
+            b = b * exp_mode + 0.1 * expl_mode
+            g = g * expl_mode + 0.1 * exp_mode
+            d = d * exp_mode + 0.05 * expl_mode
 
         scores = a * warp_arr + b * thomp_arr + g * res_arr + d * explor_arr
         top_k_indices = np.argpartition(scores, -top_k)[-top_k:]
