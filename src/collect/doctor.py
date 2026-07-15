@@ -68,6 +68,7 @@ _CORE_MODULES = [
     "collect.workflow.sandbox",
     "collect.retrieval.profiles",
     "collect.prompts",
+    "collect.patterns",
     "collect.harvest.arxiv",
     "collect.harvest.rfc",
 ]

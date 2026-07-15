@@ -13,6 +13,7 @@ Pfade:
 
 from __future__ import annotations
 
+from collect import patterns
 from collect.agents.base import BaseAgent
 from collect.bus import Message
 from collect.config import settings
@@ -27,44 +28,39 @@ import re
 # 'phase' triggerte auf "Phase-Locking", 'aufgabe'/'schritt'/'projekt' auf
 # gewöhnliche Wissensfragen. Jetzt: Wortgrenzen + Plan-SUBSTANTIVE bzw.
 # Imperativ ("erstelle/plane/organisiere …") in Kombination mit Plan-Objekt.
-_PLAN_NOUNS = re.compile(
-    r"\b(plan|pläne|plaene|ablaufplan(s|es)?|aufgabenplan(s|es)?|roadmap|workflow|"
-    r"schritte|steps)\b",  # Plural! Singular ('Schritt für Schritt') ist Erklär-Sprache
-    re.IGNORECASE)
-_PLAN_IMPERATIVE = re.compile(
-    r"\b(erstelle?|plane?|organisiere?|koordiniere?|strukturiere?|"
-    r"create|organize|coordinate)\b",
-    re.IGNORECASE)
+# Wortlisten zentral in collect.patterns (extern erweiterbar via
+# COLLECT_PATTERNS_DIR/plan_detection.json bzw. code_detection.json);
+# Aliase für bestehende Importe (Default-Listen, beim Import gebunden).
+_PLAN_NOUNS = patterns.word_regex(tuple(patterns.embedded("plan_detection")["nouns"]))
+_PLAN_IMPERATIVE = patterns.word_regex(
+    tuple(patterns.embedded("plan_detection")["imperatives"]))
 
 
 def is_plan_query(query: str) -> bool:
     """Plan-Substantiv reicht; ein Imperativ-Verb nur zusammen mit einem
     Handlungs-Objekt im Satz (verhindert 'Erkläre mir …'-Fehltreffer)."""
-    if _PLAN_NOUNS.search(query):
+    p = patterns.get_patterns("plan_detection")
+    if patterns.word_regex(tuple(p["nouns"])).search(query):
         return True
-    if _PLAN_IMPERATIVE.search(query):
-        return bool(re.search(
-            r"\b(schritte|steps|verzeichnis|datei(en)?|directory|file|struktur)\b",
-            query, re.IGNORECASE))
+    if patterns.word_regex(tuple(p["imperatives"])).search(query):
+        return bool(patterns.word_regex(tuple(p["objects"])).search(query))
     return False
 
 
 # Code-Workflow: explizites `code:`-Prefix ODER Implementier-Verb +
 # Code-Objekt. Bewusst konservativ — Wissensfragen über Code ("Wie
 # funktioniert eine Klasse?") gehen weiter den Retrieval-Weg.
-_CODE_VERBS = re.compile(
-    r"\b(implementiere?|implement|refaktoriere?|refactor|fixe?|bugfix|"
-    r"schreibe?|write|baue?|build)\b", re.IGNORECASE)
-_CODE_OBJECTS = re.compile(
-    r"\b(funktion(en)?|function(s)?|klasse(n)?|class(es)?|methode(n)?|"
-    r"method(s)?|modul(e)?|module(s)?|test(s)?|skript(e)?|script(s)?|"
-    r"bug(s)?|code)\b", re.IGNORECASE)
+_CODE_VERBS = patterns.word_regex(tuple(patterns.embedded("code_detection")["verbs"]))
+_CODE_OBJECTS = patterns.word_regex(
+    tuple(patterns.embedded("code_detection")["objects"]))
 
 
 def is_code_task(query: str) -> bool:
     if query.strip().lower().startswith("code:"):
         return True
-    return bool(_CODE_VERBS.search(query) and _CODE_OBJECTS.search(query))
+    p = patterns.get_patterns("code_detection")
+    return bool(patterns.word_regex(tuple(p["verbs"])).search(query)
+                and patterns.word_regex(tuple(p["objects"])).search(query))
 
 
 class OrchestratorAgent(BaseAgent):

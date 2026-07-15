@@ -316,6 +316,16 @@ class CollectSettings(BaseSettings):
                     "den eingebauten Prompt zurück.",
     )
 
+    patterns_dir: Optional[Path] = Field(
+        default=None,
+        description="Verzeichnis mit Pattern-Overrides (<name>.json): "
+                    "plan_detection, code_detection, profile_signals. "
+                    "Vorlagen: python -m collect.patterns export <dir>. "
+                    "Invalide Dateien fallen mit Warnung auf die eingebauten "
+                    "Listen zurück. Security-Patterns sind bewusst NICHT "
+                    "überschreibbar.",
+    )
+
     # ── Retrieval-Verhalten ─────────────────────────────────────────────
     retrieval_profile: str = Field(
         default="auto",
