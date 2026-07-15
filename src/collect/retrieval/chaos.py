@@ -120,6 +120,7 @@ class ChaosRetrieval:
                  thompson_seed: Optional[int] = None,
                  deterministic: Optional[bool] = None):
         from collect.config import settings
+        self._settings = settings
         self.store = store
         self.engine = engine
         self.field = field
@@ -127,10 +128,14 @@ class ChaosRetrieval:
                               if deterministic is None else deterministic)
         self.warp = RiemannianWarp(embed_dim, lorenz_dims)
         self.thompson = ThompsonSampler(seed=thompson_seed)
+        # Basis-Gewichte aus der Config (COLLECT_RETRIEVAL_ALPHA etc.) —
+        # deterministisch = Basis-Set, Chaos-Modus = chaos_*-Set.
         if self.deterministic:
-            self.alpha, self.beta, self.gamma, self.delta = 0.8, 0.05, 0.1, 0.05
+            self.alpha, self.beta = settings.retrieval_alpha, settings.retrieval_beta
+            self.gamma, self.delta = settings.retrieval_gamma, settings.retrieval_delta
         else:
-            self.alpha, self.beta, self.gamma, self.delta = 0.5, 0.2, 0.2, 0.1
+            self.alpha, self.beta = settings.retrieval_chaos_alpha, settings.retrieval_chaos_beta
+            self.gamma, self.delta = settings.retrieval_chaos_gamma, settings.retrieval_chaos_delta
         self._last_retrieved: list = []
         self._search_count: int = 0
         self._adaptive_count: int = 0
@@ -140,7 +145,7 @@ class ChaosRetrieval:
         """→ [(doc_id, distance)]. profile überschreibt die Init-Gewichte
         (null → Init-Gewichte / Settings)."""
         self._search_count += 1
-        if self._search_count % 50 == 0:
+        if self._search_count % max(1, self._settings.retrieval_adapt_interval) == 0:
             self._adapt_lorenz()
 
         t0 = time.perf_counter()
@@ -162,11 +167,13 @@ class ChaosRetrieval:
 
         if profile:
             if profile.get("adaptive"):
+                # Rampe explorativ → präzise; Schwellen konfigurierbar
+                # (COLLECT_RETRIEVAL_ADAPTIVE_*), zählt pro Service-Prozess.
                 self._adaptive_count += 1
-                if self._adaptive_count < 20:
+                if self._adaptive_count < self._settings.retrieval_adaptive_explore_until:
                     a, b, g, d = 0.55, 0.15, 0.10, 0.20
                     use_sample = True
-                elif self._adaptive_count < 80:
+                elif self._adaptive_count < self._settings.retrieval_adaptive_settle_until:
                     a, b, g, d = 0.70, 0.08, 0.15, 0.07
                     use_sample = False
                 else:
@@ -198,7 +205,7 @@ class ChaosRetrieval:
             thomp_arr = self.thompson.batch_sample(id_map) if use_sample else self.thompson.batch_mean(id_map)
         explor_arr = self.thompson.exploration_scores(id_map)
 
-        n_anchor = min(20, n)
+        n_anchor = min(self._settings.retrieval_resonance_anchors, n)
         top20_indices = np.argpartition(warp_arr, -n_anchor)[-n_anchor:]
         top20_indices = top20_indices[np.argsort(warp_arr[top20_indices])[::-1]]
         top20_ids = [id_map[i] for i in top20_indices]
@@ -212,10 +219,11 @@ class ChaosRetrieval:
         if use_warp and self.deterministic is False:
             exp_mode = entropy
             expl_mode = 1.0 - entropy
-            a = a * expl_mode + 0.3 * exp_mode
-            b = b * exp_mode + 0.1 * expl_mode
-            g = g * expl_mode + 0.1 * exp_mode
-            d = d * exp_mode + 0.05 * expl_mode
+            ma, mb, mg, md = self._settings.retrieval_entropy_mix
+            a = a * expl_mode + ma * exp_mode
+            b = b * exp_mode + mb * expl_mode
+            g = g * expl_mode + mg * exp_mode
+            d = d * exp_mode + md * expl_mode
 
         scores = a * warp_arr + b * thomp_arr + g * res_arr + d * explor_arr
         top_k_indices = np.argpartition(scores, -top_k)[-top_k:]

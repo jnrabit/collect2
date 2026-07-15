@@ -13,7 +13,9 @@ from typing import Optional
 
 from collect.config import settings
 
-NO_HIT_DISTANCE = 999.0  # Konvention des Alt-Systems für "keine Treffer"
+# Konvention des Alt-Systems für "keine Treffer" — jetzt konfigurierbar
+# (COLLECT_RETRIEVAL_NO_HIT_DISTANCE); Modul-Alias bindet beim Prozess-Start.
+NO_HIT_DISTANCE = settings.retrieval_no_hit_distance
 
 ZONE_TRUST = "TRUST"
 ZONE_GRAY = "GRAUZONE"

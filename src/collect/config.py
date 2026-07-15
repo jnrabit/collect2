@@ -314,6 +314,56 @@ class CollectSettings(BaseSettings):
                     "Ändert nur die Reihenfolge, nie Distanzen/Zonen.",
     )
 
+    # ── Retrieval-Scoring: Rohwerte (das "fließende Einstellen") ────────
+    # Score = α·cosine + β·thompson + γ·resonanz + δ·exploration.
+    # Basis-Gewichte gelten ohne Profil UND als 'balanced'-Preset; die
+    # chaos_*-Gewichte sind das 'chaos'-Preset / der nicht-deterministische
+    # Modus. ACHTUNG: Die Zonen-Schwellen (50/62) sind auf die Basis-Gewichte
+    # kalibriert — wer α stark ändert, verschiebt die Zonen-Semantik.
+    retrieval_alpha: float = Field(default=0.80, description="Gewicht Cosine-Ähnlichkeit")
+    retrieval_beta: float = Field(default=0.05, description="Gewicht Thompson-Posterior")
+    retrieval_gamma: float = Field(default=0.10, description="Gewicht Resonanz-Boost")
+    retrieval_delta: float = Field(default=0.05, description="Gewicht Explorations-Bonus")
+    retrieval_chaos_alpha: float = Field(default=0.50, description="α im Chaos-Modus")
+    retrieval_chaos_beta: float = Field(default=0.20, description="β im Chaos-Modus")
+    retrieval_chaos_gamma: float = Field(default=0.20, description="γ im Chaos-Modus")
+    retrieval_chaos_delta: float = Field(default=0.10, description="δ im Chaos-Modus")
+    retrieval_rrf_k: int = Field(
+        default=60,
+        description="Reciprocal-Rank-Fusion-Konstante k (Subquery-Fusion). "
+                    "Kleiner = Top-Ränge dominieren stärker.")
+    retrieval_no_hit_distance: float = Field(
+        default=999.0,
+        description="Distanz-Konvention für 'keine Treffer' (→ FALLBACK).")
+    retrieval_adapt_interval: int = Field(
+        default=50,
+        description="Alle N Suchen: Lorenz-Parameter-Adaption an den "
+                    "Resonanzfeld-Zustand.")
+    retrieval_resonance_anchors: int = Field(
+        default=20,
+        description="Anzahl Top-Treffer als Anker für den Resonanz-Boost.")
+    retrieval_adaptive_explore_until: int = Field(
+        default=20,
+        description="adaptive-Profil: bis zu dieser Such-Anzahl explorativ "
+                    "(breite Gewichte + Sampling).")
+    retrieval_adaptive_settle_until: int = Field(
+        default=80,
+        description="adaptive-Profil: bis hierhin Übergangsphase, danach "
+                    "präzise Gewichte. Zählt pro Service-Prozess.")
+    retrieval_entropy_mix: tuple[float, float, float, float] = Field(
+        default=(0.3, 0.1, 0.1, 0.05),
+        description="Chaos-Modus: Mix-Anteile (α,β,γ,δ) der Entropie-"
+                    "Modulation. Env als JSON: [0.3,0.1,0.1,0.05]")
+    resonance_decay: float = Field(
+        default=0.995,
+        description="Zerfallsrate der Ko-Aktivierungsmatrix pro Update "
+                    "(näher an 1.0 = längeres Gedächtnis).")
+    retrieval_profile_overrides: dict = Field(
+        default_factory=dict,
+        description="Gezielte Überschreibung einzelner Profil-Werte, gemergt "
+                    "über die Presets. Env als JSON: "
+                    '{"chaos": {"delta": 0.2}, "broad": {"alpha": 0.6}}')
+
     # ── Routing & Antwortlogik ──────────────────────────────────────────
     code_route_high: float = 0.40
     code_route_low: float = 0.25
@@ -359,22 +409,35 @@ class CollectSettings(BaseSettings):
     def retrieval_profiles(self) -> dict:
         """Die 6 benannten Profile — α(cosine), β(thompson), γ(resonance),
         δ(exploration), warp(Bool), sampling(Bool). 'sampling' steuert ob
-        Thompson einen Zufallswert oder den Posterior-Mean liefert."""
-        return {
+        Thompson einen Zufallswert oder den Posterior-Mean liefert.
+        'balanced' und 'chaos' speisen sich aus den Rohwert-Feldern oben;
+        retrieval_profile_overrides mergt gezielt einzelne Werte darüber."""
+        profiles = {
             "precise":  {"alpha": 0.95, "beta": 0.0,  "gamma": 0.0,  "delta": 0.05,
                          "warp": False, "sampling": False},
-            "balanced": {"alpha": 0.80, "beta": 0.05, "gamma": 0.10, "delta": 0.05,
+            "balanced": {"alpha": self.retrieval_alpha, "beta": self.retrieval_beta,
+                         "gamma": self.retrieval_gamma, "delta": self.retrieval_delta,
                          "warp": False, "sampling": False},
             "broad":    {"alpha": 0.55, "beta": 0.15, "gamma": 0.10, "delta": 0.20,
                          "warp": False, "sampling": True},
             "resonant": {"alpha": 0.60, "beta": 0.05, "gamma": 0.30, "delta": 0.05,
                          "warp": False, "sampling": False},
-            "chaos":    {"alpha": 0.50, "beta": 0.20, "gamma": 0.20, "delta": 0.10,
+            "chaos":    {"alpha": self.retrieval_chaos_alpha,
+                         "beta": self.retrieval_chaos_beta,
+                         "gamma": self.retrieval_chaos_gamma,
+                         "delta": self.retrieval_chaos_delta,
                          "warp": True,  "sampling": True},
             "adaptive": {"alpha": 0.0,  "beta": 0.0,  "gamma": 0.0,  "delta": 0.0,
                          "warp": False, "sampling": False,
                          "adaptive": True},
         }
+        # Overrides: nur bekannte Profile & bekannte Keys — Tippfehler in der
+        # Env dürfen keine stillen Geister-Keys erzeugen.
+        for name, ov in (self.retrieval_profile_overrides or {}).items():
+            if name in profiles and isinstance(ov, dict):
+                profiles[name].update(
+                    {k: v for k, v in ov.items() if k in profiles[name]})
+        return profiles
 
     def get_profile(self, name: str) -> dict:
         """Validierten Profil-Lookup — 'auto' oder ungültig → balanced."""

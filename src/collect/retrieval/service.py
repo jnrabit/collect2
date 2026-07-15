@@ -28,7 +28,9 @@ from collect.retrieval.zones import ZoneVerdict, classify_zone
 
 logger = logging.getLogger(__name__)
 
-RRF_K = 60  # Standard-Konstante für Reciprocal Rank Fusion
+# RRF-Konstante aus der Config (COLLECT_RETRIEVAL_RRF_K); Modul-Alias bleibt
+# für bestehende Importe erhalten — bindet beim Prozess-Start.
+RRF_K = settings.retrieval_rrf_k
 
 
 @dataclass
@@ -100,12 +102,16 @@ def lexical_rerank(query: str, merged: list[tuple], doc_text_fn,
     return sorted(merged, key=adjusted)
 
 
-def rrf_merge(ranked_lists: list[list[tuple]], k: int = RRF_K) -> list[tuple]:
+def rrf_merge(ranked_lists: list[list[tuple]],
+              k: Optional[int] = None) -> list[tuple]:
     """Fusioniert mehrere (doc_id, distance)-Rankings per Reciprocal Rank Fusion.
 
     Reihenfolge nach RRF-Score; die Distanz eines Docs ist das MINIMUM über
     alle Listen (beste Nähe zählt — darauf sind die Zonen-Schwellen bezogen).
+    k=None → Config (COLLECT_RETRIEVAL_RRF_K).
     """
+    if k is None:
+        k = settings.retrieval_rrf_k
     if len(ranked_lists) == 1:
         return ranked_lists[0]
     scores: dict = {}

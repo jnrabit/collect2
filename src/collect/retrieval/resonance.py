@@ -22,10 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 class ResonanceField:
-    def __init__(self, field_file: Path, n_lorenz_dims: int = 8, decay: float = 0.995):
+    def __init__(self, field_file: Path, n_lorenz_dims: int = 8,
+                 decay: Optional[float] = None):
+        from collect.config import settings
         self.field_file = Path(field_file)
         self.n_lorenz_dims = n_lorenz_dims
-        self.decay = decay
+        # None → Config (COLLECT_RESONANCE_DECAY); expliziter Wert gewinnt
+        self.decay = settings.resonance_decay if decay is None else decay
         self.R: dict = defaultdict(lambda: defaultdict(float))
         self.doc_positions: dict = {}
         self.gravity_centers: list = []
