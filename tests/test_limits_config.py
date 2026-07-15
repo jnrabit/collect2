@@ -123,6 +123,29 @@ def test_websearch_snippet_limits_from_settings(monkeypatch):
     assert all(len(h["content"]) <= 100 for h in resp.data["hits"])
 
 
+# ── Token-Limit-Hinweis: gekappte Antworten werden gekennzeichnet ────────
+
+def test_truncated_answer_gets_hint(monkeypatch):
+    from collect.agents.response import synthesize
+    monkeypatch.setattr(settings, "llm_num_predict", 100)
+    state = {
+        "query": "q", "expected": {"retrieval", "llm"},
+        "contribs": {
+            "retrieval": {"zone": "TRUST", "best_distance": 30.0,
+                          "count": 1, "hits": []},
+            "llm": {"content": "Lange Antwort, die mitten im", "facts_used": 0,
+                    "eval_count": 100},  # == num_predict ⇒ gekappt
+        },
+        "reply_to": "r", "finalized": False, "started_at": 0,
+    }
+    text, _ = synthesize(state)
+    assert "Token-Limit abgeschnitten" in text
+    # nicht gekappt (eval_count < Limit) → kein Hinweis
+    state["contribs"]["llm"]["eval_count"] = 42
+    text, _ = synthesize(state)
+    assert "Token-Limit" not in text
+
+
 # ── Defaults = altes Verhalten (bis auf den dokumentierten 1600er-Fix) ───
 
 def test_limit_defaults():
@@ -130,7 +153,7 @@ def test_limit_defaults():
     assert settings.retrieval_max_content_chars == 1600  # war 1200 — bewusst!
     assert settings.decompose_max_subqueries == 3
     assert settings.rewrite_max_content_terms == 6
-    assert settings.llm_num_predict == 1024
+    assert settings.llm_num_predict == 2048  # 1024 kappte tiefe Antworten im Satz
     assert settings.web_search_max_snippets == 6
     assert settings.web_search_snippet_chars == 1200
     assert settings.web_search_page_fetches == 2

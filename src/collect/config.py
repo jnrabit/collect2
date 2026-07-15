@@ -289,9 +289,11 @@ class CollectSettings(BaseSettings):
     llm_doc_chars: int = Field(default=1500, description="Zeichen pro Vault-Quelle im Prompt")
     llm_top_docs: int = Field(default=8, description="Anzahl Quellen im Prompt")
     llm_num_predict: int = Field(
-        default=1024,
+        default=2048,
         description="Ollama num_predict: max generierte Tokens pro Antwort "
-                    "(Sicherheitsnetz gegen Weglaufen; JSON-Modus nutzt fix 2048)")
+                    "(Sicherheitsnetz gegen Weglaufen). 1024 schnitt tiefe "
+                    "Antworten (Richtung C, 8 Quellen) mitten im Satz ab; "
+                    "2048 passt mit dem 40k-Prompt-Budget in num_ctx=16384.")
     retrieval_max_hits: int = Field(
         default=8, description="Hits pro Vault im Bus-Beitrag (Basis für llm_top_docs)")
     retrieval_max_content_chars: int = Field(

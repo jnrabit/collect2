@@ -207,6 +207,13 @@ def synthesize(state: dict) -> tuple[str, dict]:
                     f"{verdict.best_distance:.1f} > {verdict.trust_threshold:.0f}) "
                     "— Antwort mit Vorsicht genießen.*")
             parts.append(content)
+            # Ans Token-Limit gelaufen? Ehrlich kennzeichnen statt mitten
+            # im Satz stumm zu enden (eval_count == num_predict ⇒ gekappt).
+            if (llm.get("eval_count") or 0) >= settings.llm_num_predict:
+                parts.append(
+                    "✂️ *Antwort am Token-Limit abgeschnitten "
+                    f"({settings.llm_num_predict} Tokens — "
+                    "COLLECT_LLM_NUM_PREDICT erhöhen für längere Antworten).*")
         elif llm.get("error"):
             parts.append(f"⚠️ LLM-Fehler: {llm['error']}")
     elif "llm" in expected and not planning:
