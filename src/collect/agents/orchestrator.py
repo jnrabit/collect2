@@ -106,11 +106,13 @@ class OrchestratorAgent(BaseAgent):
                 self.log.warning("Session-Load fehlgeschlagen: %s", e)
 
         # Code-Task VOR Plan prüfen (Implementier-Tasks enthalten oft
-        # Plan-Vokabular); beide Pfade laufen exklusiv.
-        if is_code_task(query):
+        # Plan-Vokabular); beide Pfade laufen exklusiv und sind einzeln
+        # abschaltbar (COLLECT_WORKFLOW_ENABLED / COLLECT_PLANNING_ENABLED —
+        # aus = die Query läuft als normale Wissensfrage weiter).
+        if settings.workflow_enabled and is_code_task(query):
             self._dispatch_workflow(query, cid, msg)
             return
-        if is_plan_query(query):
+        if settings.planning_enabled and is_plan_query(query):
             self._dispatch_plan(query, cid, msg)
             return
 

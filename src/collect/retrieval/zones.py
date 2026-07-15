@@ -38,6 +38,14 @@ class ZoneVerdict:
         return self.zone == ZONE_GRAY
 
 
+def fallback_suppressed(is_fallback: bool, grounded: bool) -> bool:
+    """Zentrale Unterdrückungs-Entscheidung — vorher in llm.py UND response.py
+    dupliziert. FALLBACK ohne Erdung → Antwort unterdrücken (Halluzinations-
+    Schutz). COLLECT_FALLBACK_SUPPRESS=false schaltet den Schutz ab; die
+    Aufrufer zeigen dann stattdessen einen Nicht-geerdet-Hinweis."""
+    return settings.fallback_suppress and is_fallback and not grounded
+
+
 def classify_zone(best_distance: Optional[float],
                   trust_threshold: Optional[float] = None,
                   soft_max_distance: Optional[float] = None) -> ZoneVerdict:

@@ -25,6 +25,7 @@ from collect.retrieval.zones import (
     ZONE_FALLBACK,
     ZONE_GRAY,
     classify_zone,
+    fallback_suppressed,
 )
 
 CONTRIB_CHANNELS = {
@@ -182,15 +183,25 @@ def synthesize(state: dict) -> tuple[str, dict]:
         meta["tok_per_s"] = llm.get("tok_per_s")
     if llm is not None:
         content = (llm.get("content") or "").strip()
-        if (verdict.zone == ZONE_FALLBACK and not planning and not workflow
-                and not has_file and not (facts_used and content)):
+        # Erdung wie in llm.py; Entscheidung zentral in zones.fallback_suppressed
+        grounded = bool(planning or workflow or has_file
+                        or (facts_used and content))
+        if fallback_suppressed(verdict.zone == ZONE_FALLBACK, grounded):
             parts.append(
                 "⚠️ Diese Frage liegt außerhalb des indizierten Wissensbereichs. "
                 "Der Vault enthält keine ausreichend nahen Dokumente "
                 f"(beste Distance: {verdict.best_distance:.1f}, "
                 f"Schwellwert: {verdict.soft_max_distance:.0f}).")
         elif content:
-            if verdict.zone == ZONE_GRAY:
+            if verdict.zone == ZONE_FALLBACK and not grounded:
+                # Schutz per COLLECT_FALLBACK_SUPPRESS=false abgeschaltet:
+                # Antwort zeigen, aber unmissverständlich kennzeichnen.
+                parts.append(
+                    f"⚠️ *FALLBACK-Zone (beste Distance "
+                    f"{verdict.best_distance:.1f} ≥ {verdict.soft_max_distance:.0f}) "
+                    "— Antwort ist NICHT vault-geerdet (Halluzinations-Schutz "
+                    "deaktiviert).*")
+            elif verdict.zone == ZONE_GRAY:
                 parts.append(
                     f"ℹ️ *Nur entfernte Vault-Treffer (beste Distance "
                     f"{verdict.best_distance:.1f} > {verdict.trust_threshold:.0f}) "

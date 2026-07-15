@@ -113,6 +113,17 @@ class CollectSettings(BaseSettings):
         description="Endungs-Allowlist (CSV) fürs Verzeichnis-/Local-Lesen")
 
     # ── Code-Workflow (Phase 6) ─────────────────────────────────────────
+    workflow_enabled: bool = Field(
+        default=True,
+        description="Code-Workflow-Erkennung (is_code_task): aus = Implementier-"
+                    "Anfragen laufen als normale Wissensfrage durchs Retrieval "
+                    "statt in die Code-Generierungs-Kaskade.",
+    )
+    planning_enabled: bool = Field(
+        default=True,
+        description="Plan-Erkennung (is_plan_query): aus = Plan-Vokabular "
+                    "startet keine Planungs-Kaskade mehr.",
+    )
     workflow_repo: Optional[Path] = Field(
         default=None,
         description="Ziel-Repo für Code-Workflows; default: executor_workspace/repo. "
@@ -157,6 +168,11 @@ class CollectSettings(BaseSettings):
         description="Automatische Web-Recherche bei Vault-FALLBACK (Opt-in). "
                     "Expliziter Trigger ('recherchiere im web') funktioniert "
                     "unabhängig hiervon.",
+    )
+    web_search_auto_with_file: bool = Field(
+        default=False,
+        description="Auto-Web auch wenn Datei-Kontext die Antwort bereits "
+                    "erdet (default: Datei-Kontext unterdrückt Auto-Web).",
     )
     web_search_url: str = Field(
         default="http://localhost:8888",
@@ -373,6 +389,12 @@ class CollectSettings(BaseSettings):
     vault_trust_threshold: float = 50.0
     vault_soft_max_distance: float = 62.0
     code_vault_trust_threshold: float = 57.0
+    fallback_suppress: bool = Field(
+        default=True,
+        description="Halluzinations-Schutz: FALLBACK-Zone ohne Erdung (Fakten/"
+                    "Datei/Web) → Antwort unterdrücken. False = LLM antwortet "
+                    "trotzdem, mit deutlichem Nicht-geerdet-Hinweis.",
+    )
 
     # ── Timeouts ────────────────────────────────────────────────────────
     query_timeout: float = 180.0

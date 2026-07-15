@@ -16,7 +16,7 @@ from collect.agents.base import BaseAgent
 from collect.agents import ollama
 from collect.bus import Message
 from collect.config import settings
-from collect.retrieval.zones import ZONE_FALLBACK, ZONE_GRAY
+from collect.retrieval.zones import ZONE_FALLBACK, ZONE_GRAY, fallback_suppressed
 
 SYSTEM_PROMPT = (
     "Du bist ein Wissensassistent. Beantworte die Frage des Nutzers auf Deutsch, "
@@ -106,9 +106,11 @@ class LLMAgent(BaseAgent):
         if state.get("web_requested") or "web" in state["contribs"]:
             return False
         # Dateikontext erdet die Antwort bereits → kein Web nötig
-        file_c = state["contribs"].get("file")
-        if file_c and file_c.get("chunks"):
-            return False
+        # (Opt-out: COLLECT_WEB_SEARCH_AUTO_WITH_FILE=true)
+        if not settings.web_search_auto_with_file:
+            file_c = state["contribs"].get("file")
+            if file_c and file_c.get("chunks"):
+                return False
         zones = [c.get("zone") for k, c in state["contribs"].items()
                  if k in ("retrieval", "code_retrieval")]
         return bool(zones) and all(z in (ZONE_GRAY, ZONE_FALLBACK) for z in zones)
@@ -146,13 +148,16 @@ class LLMAgent(BaseAgent):
 
         # Dateiinhalt/Web-Recherche erdet die Antwort → nie überspringen.
         # Sonst: alle Vault-Zonen FALLBACK und keine Fakten → Halluzination.
+        # Entscheidung zentral in zones.fallback_suppressed (Flag-abschaltbar).
         file_contrib = state["contribs"].get("file")
         has_file = bool(file_contrib and file_contrib.get("chunks"))
         web_contrib = state["contribs"].get("web")
         has_web = bool(web_contrib and web_contrib.get("count"))
         zones = [c.get("zone") for k, c in state["contribs"].items()
                  if k in ("retrieval", "code_retrieval")]
-        if zones and all(z == ZONE_FALLBACK for z in zones) and not facts and not has_file and not has_web:
+        all_fallback = bool(zones) and all(z == ZONE_FALLBACK for z in zones)
+        if fallback_suppressed(all_fallback,
+                               grounded=bool(facts or has_file or has_web)):
             self.log.info("%s: alle Zonen FALLBACK, keine Fakten/Datei/Web — LLM übersprungen", cid[:8])
             self.publish("llm_response", "llm_response",
                          {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
