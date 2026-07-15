@@ -16,6 +16,7 @@ import re
 import time
 from typing import Callable, Optional
 
+from collect import prompts
 from collect.config import settings
 from collect.retrieval.service import query_terms
 
@@ -35,12 +36,9 @@ _LEAD_IN = re.compile(
     r"^(und|aber|oder|also|and|but|or|so)\b|^(was|what|how)\s+(ist|is|about)\s+(mit|with)\b",
     re.IGNORECASE)
 
-REWRITE_PROMPT = (
-    "Formuliere die FOLGEFRAGE als eigenständige, vollständige Frage um, "
-    "die ohne das Gespräch verständlich ist. Behalte die Sprache der "
-    "Folgefrage bei. Antworte NUR mit der umformulierten Frage — keine "
-    "Erklärung, keine Anführungszeichen.\n\n"
-    "GESPRÄCH:\n{history}\n\nFOLGEFRAGE: {query}\n\nEigenständige Frage:")
+# Text zentral in collect.prompts (extern überschreibbar via
+# COLLECT_PROMPTS_DIR/rewrite.txt); Alias für bestehende Importe.
+REWRITE_PROMPT = prompts.embedded("rewrite")
 
 
 def is_referential(query: str) -> bool:
@@ -75,7 +73,8 @@ def rewrite(query: str, history: list,
     for turn in history[-2:]:
         lines.append(f"Nutzer: {str(turn.get('q', ''))[:200]}")
         lines.append(f"Assistent: {str(turn.get('a', ''))[:300]}")
-    prompt = REWRITE_PROMPT.format(history="\n".join(lines), query=query)
+    prompt = prompts.get_prompt("rewrite").format(
+        history="\n".join(lines), query=query)
 
     try:
         if generate_fn is None:

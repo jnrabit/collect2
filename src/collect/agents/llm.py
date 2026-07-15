@@ -14,18 +14,14 @@ from typing import Callable, Optional
 
 from collect.agents.base import BaseAgent
 from collect.agents import ollama
+from collect import prompts
 from collect.bus import Message
 from collect.config import settings
 from collect.retrieval.zones import ZONE_FALLBACK, ZONE_GRAY, fallback_suppressed
 
-SYSTEM_PROMPT = (
-    "Du bist ein Wissensassistent. Beantworte die Frage des Nutzers auf Deutsch, "
-    "GESTÜTZT auf die bereitgestellten Quellen. Antworte AUSFÜHRLICH und gut "
-    "strukturiert: erkläre Zusammenhänge, gib relevante Details und Beispiele aus "
-    "den Quellen wieder statt nur Stichworte. Nenne die verwendeten Quellen — bei "
-    "Web-Quellen mit dem Link (URL). Wenn die Quellen die Frage nicht abdecken, "
-    "sage das ehrlich. Erfinde keine Fakten."
-)
+# Text zentral in collect.prompts (extern überschreibbar via
+# COLLECT_PROMPTS_DIR/llm_system.txt); Alias für bestehende Importe.
+SYSTEM_PROMPT = prompts.embedded("llm_system")
 
 
 class LLMAgent(BaseAgent):
@@ -204,11 +200,12 @@ class LLMAgent(BaseAgent):
                     or time.monotonic() - last_flush[0] >= flush_secs):
                 flush()
 
+        system = prompts.get_prompt("llm_system")
         try:
-            result = self.generate(prompt, system=SYSTEM_PROMPT, on_token=on_token)
+            result = self.generate(prompt, system=system, on_token=on_token)
         except TypeError:
             # Backend ohne on_token-Support (z.B. non-streaming generate)
-            result = self.generate(prompt, system=SYSTEM_PROMPT)
+            result = self.generate(prompt, system=system)
         flush()
         if isinstance(result, tuple):
             return result[0], (result[1] or {})

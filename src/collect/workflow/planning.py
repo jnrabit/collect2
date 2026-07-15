@@ -5,23 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from collect import prompts
 from collect.config import settings
 
-PROMPT = """Du bist ein Software-Planer. Plane die Umsetzung des Tasks als konkrete Datei-Änderungen.
-
-TASK: {task}
-
-{briefing}
-
-Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
-{{"strategy": "1-2 Sätze Vorgehen",
-  "files": [{{"path": "relativer/pfad.py", "action": "create|modify",
-              "description": "was genau in dieser Datei passiert"}}]}}
-
-Regeln:
-- Maximal {max_files} Dateien, nur relative Pfade innerhalb des Repos.
-- Zu JEDER neuen Funktionalität gehört eine Testdatei (tests/test_*.py, pytest).
-- Kein Text vor oder nach dem JSON."""
+# Text zentral in collect.prompts (extern überschreibbar via
+# COLLECT_PROMPTS_DIR/workflow_planning.txt); Alias für bestehende Importe.
+PROMPT = prompts.embedded("workflow_planning")
 
 
 def parse_plan(raw: str) -> dict:
@@ -54,8 +43,9 @@ def parse_plan(raw: str) -> dict:
 
 
 def plan(task: str, briefing: str, generate) -> dict:
-    prompt = PROMPT.format(task=task, briefing=briefing[:6000],
-                           max_files=settings.workflow_max_files)
+    prompt = prompts.get_prompt("workflow_planning").format(
+        task=task, briefing=briefing[:6000],
+        max_files=settings.workflow_max_files)
     try:
         raw = generate(prompt, system="Antworte nur mit gültigem JSON.")
         if isinstance(raw, tuple):

@@ -97,13 +97,9 @@ class QueryTranslator:
             return None
 
     def _build_prompt(self, query: str) -> str:
-        return (
-            "Translate the following German query into concise English suitable "
-            "for keyword search in technical/scientific documents. "
-            "Keep technical terms (TLS, HTTP, RAM, etc.) unchanged. "
-            "Output ONLY the translated query — no quotes, no explanation, no prefix.\n\n"
-            f"German: {query}\nEnglish:"
-        )
+        # Text zentral in collect.prompts (COLLECT_PROMPTS_DIR/translate.txt)
+        from collect import prompts
+        return prompts.get_prompt("translate").format(query=query)
 
     def _clean_response(self, raw: str) -> str:
         s = raw.strip().strip("\"'")

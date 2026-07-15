@@ -80,16 +80,9 @@ class QueryDecomposer:
             pass
 
     def _build_prompt(self, query: str) -> str:
-        return (
-            "Break the following search query into 2-3 focused, self-contained sub-queries, "
-            "ONE per distinct concept or domain it touches. Each sub-query must stand alone "
-            "(no pronouns referring to the others) and be in English, suitable for keyword/"
-            "semantic search in technical & scientific documents. Do NOT add concepts the "
-            "query does not mention. If the query is already single-topic, return it unchanged "
-            "as the only element.\n\n"
-            f"Query: {query}\n"
-            'Respond as JSON: {"subqueries": ["...", "..."]}'
-        )
+        # Text zentral in collect.prompts (COLLECT_PROMPTS_DIR/decompose.txt)
+        from collect import prompts
+        return prompts.get_prompt("decompose").format(query=query)
 
     def _call_ollama(self, prompt: str) -> Optional[dict]:
         payload = {

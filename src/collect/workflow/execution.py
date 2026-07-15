@@ -11,49 +11,19 @@ import ast
 import re
 from pathlib import Path
 
+from collect import prompts
 from collect.regression_guard import check_change
 from collect.validation import write_blockers
 from collect.workflow.idioms import inject_idiom
 
-PROMPT = """Du bist ein präziser Software-Entwickler. Schreibe den VOLLSTÄNDIGEN Inhalt einer Datei.
-
-TASK: {task}
-STRATEGIE: {strategy}
-{written}
-DATEI: {path}
-AUFGABE DIESER DATEI: {description}
-{current}
-Regeln:
-- Gib den KOMPLETTEN Datei-Inhalt aus (kein Diff, keine Auslassungen).
-- Bei modify: bestehende Funktionen/Klassen BEIBEHALTEN, außer der Plan sagt anderes.
-- Tests: importiere aus den BEREITS GESCHRIEBENEN Dateien; Erwartungswerte
-  müssen sich EXAKT aus deren Code ergeben — lieber wenige, korrekte Assertions.
-- Antworte NUR mit einem Code-Block:
-```python
-...
-```"""
+# Texte zentral in collect.prompts (extern überschreibbar via
+# COLLECT_PROMPTS_DIR/workflow_codegen.txt bzw. workflow_repair.txt);
+# Aliase für bestehende Importe.
+PROMPT = prompts.embedded("workflow_codegen")
 
 _FENCE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
 
-REPAIR_PROMPT = """Du bist ein präziser Software-Entwickler. Die Tests schlagen fehl — repariere GENAU EINE Datei.
-
-TASK: {task}
-
-TEST-FEHLER:
-{failure}
-
-DATEIEN IM REPO:
-{files}
-
-ENTSCHEIDE zuerst, WO der Fehler liegt — prüfe die TATSÄCHLICHE Ausgabe im Fehler gegen den TASK:
-- Erfüllt die tatsächliche Ausgabe den TASK NICHT → die IMPLEMENTIERUNG ist falsch, fixe sie.
-- Erfüllt sie den TASK, weicht nur die Test-Erwartung ab → fixe die TESTDATEI (Erwartung = tatsächliche Ausgabe).
-- NameError/ImportError → meist fehlender Import in der Testdatei.
-Antworte in GENAU diesem Format — erst die Pfad-Zeile, dann der komplette korrigierte Inhalt:
-PFAD: <relativer/pfad.py>
-```python
-...vollständiger Datei-Inhalt...
-```"""
+REPAIR_PROMPT = prompts.embedded("workflow_repair")
 
 _REPAIR_PATH = re.compile(r"PFAD:\s*([^\s`]+)")
 
@@ -105,7 +75,7 @@ def execute(ctx, generate, progress=None) -> None:
         if progress:
             progress("workflow_execute", f"{rel} wird generiert…")
         try:
-            raw = generate(inject_idiom(PROMPT.format(
+            raw = generate(inject_idiom(prompts.get_prompt("workflow_codegen").format(
                 task=ctx.task, strategy=ctx.plan.get("strategy", ""),
                 path=rel, description=spec["description"], current=current,
                 written=written), ctx.task, "execution"))
@@ -153,7 +123,7 @@ def repair(ctx, generate, progress=None) -> bool:
 
     files_block = "\n\n".join(f"--- {p} ---\n{_safe_read(p)}" for p in written)
     try:
-        raw = generate(REPAIR_PROMPT.format(
+        raw = generate(prompts.get_prompt("workflow_repair").format(
             task=ctx.task, failure=ctx.verify.get("output", "")[:1500],
             files=files_block))
         if isinstance(raw, tuple):

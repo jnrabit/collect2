@@ -306,6 +306,16 @@ class CollectSettings(BaseSettings):
                     "und die 8GB VRAM gehören vollständig der LLM",
     )
 
+    # ── Prompts ─────────────────────────────────────────────────────────
+    prompts_dir: Optional[Path] = Field(
+        default=None,
+        description="Verzeichnis mit Prompt-Overrides (<name>.txt). Leer = "
+                    "eingebaute Prompts. Vorlagen exportieren: "
+                    "python -m collect.prompts export <dir>. Invalide Dateien "
+                    "(fehlende/unbekannte Platzhalter) fallen mit Warnung auf "
+                    "den eingebauten Prompt zurück.",
+    )
+
     # ── Retrieval-Verhalten ─────────────────────────────────────────────
     retrieval_profile: str = Field(
         default="auto",

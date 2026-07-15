@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Callable
 
+from collect import prompts
 from collect.agents import ollama
 from collect.config import settings
 from collect.session import SessionStore
@@ -17,14 +18,9 @@ from collect.session import SessionStore
 logger = logging.getLogger("agent.meeting")
 
 
-SUMMARY_PROMPT = """Du bist ein präziser Zusammenfasser. Verdichte den folgenden Gesprächsverlauf
-auf 3-5 KERNSÄTZE. Nur Fakten und Ergebnisse, keine Höflichkeitsfloskeln.
-Schreibe auf Deutsch, maximal 300 Zeichen.
-
-GESPRÄCH:
-{turns}
-
-ZUSAMMENFASSUNG:"""
+# Text zentral in collect.prompts (extern überschreibbar via
+# COLLECT_PROMPTS_DIR/session_summary.txt); Alias für bestehende Importe.
+SUMMARY_PROMPT = prompts.embedded("session_summary")
 
 
 class MeetingProtokoll:
@@ -51,7 +47,7 @@ class MeetingProtokoll:
             pairs.append(f"Q: {str(t.get('q', ''))[:200]}")
             pairs.append(f"A: {str(t.get('a', ''))[:300]}")
 
-        prompt = SUMMARY_PROMPT.format(turns="\n".join(pairs))
+        prompt = prompts.get_prompt("session_summary").format(turns="\n".join(pairs))
 
         try:
             raw = self.generate(prompt, model=self._model,
