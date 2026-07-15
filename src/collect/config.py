@@ -180,7 +180,17 @@ class CollectSettings(BaseSettings):
     )
     web_search_timeout: float = 15.0
     web_search_results: int = Field(
-        default=5, description="max Snippets in die Synthese")
+        default=5, description="max Suchergebnisse von SearXNG")
+    web_search_max_snippets: int = Field(
+        default=6, description="max Snippets im Web-Beitrag (vor Page-Chunks)")
+    web_search_snippet_chars: int = Field(
+        default=1200, description="Zeichen pro Snippet/Page-Chunk im Beitrag")
+    web_search_page_fetches: int = Field(
+        default=2, description="Top-N Ergebnisse als ganze Seite abrufen")
+    web_search_page_chunk_chars: int = Field(
+        default=1000, description="Chunk-Größe beim Zerlegen abgerufener Seiten")
+    web_search_page_top_chunks: int = Field(
+        default=3, description="relevanteste Seiten-Chunks (Cosine) pro Seite")
     web_search_trigger: str = Field(
         default="recherchiere|recherchieren|such im web|suche im web|google|"
                 "web suche|web recherche|im internet|online suche",
@@ -269,6 +279,8 @@ class CollectSettings(BaseSettings):
     )
     translate_enabled: bool = True
     decompose_enabled: bool = True
+    decompose_max_subqueries: int = Field(
+        default=3, description="max Teilfragen pro Query (RRF-Fusion)")
     # Interim-Streaming-Batching (Bus-Last vs. gefühlte Latenz)
     llm_flush_chars: int = 80
     llm_flush_secs: float = 0.15
@@ -276,6 +288,17 @@ class CollectSettings(BaseSettings):
     # aber längerer Prompt (langsamer, mehr Kontext). Richtung "C" (tief).
     llm_doc_chars: int = Field(default=1500, description="Zeichen pro Vault-Quelle im Prompt")
     llm_top_docs: int = Field(default=8, description="Anzahl Quellen im Prompt")
+    llm_num_predict: int = Field(
+        default=1024,
+        description="Ollama num_predict: max generierte Tokens pro Antwort "
+                    "(Sicherheitsnetz gegen Weglaufen; JSON-Modus nutzt fix 2048)")
+    retrieval_max_hits: int = Field(
+        default=8, description="Hits pro Vault im Bus-Beitrag (Basis für llm_top_docs)")
+    retrieval_max_content_chars: int = Field(
+        default=1600,
+        description="Zeichen pro Hit auf dem Bus. MUSS ≥ llm_doc_chars sein — "
+                    "sonst kappt der Bus die Quellen, BEVOR der LLM sie sieht "
+                    "(der alte Wert 1200 hat llm_doc_chars=1500 still kastriert).")
     llm_web_chars: int = Field(default=1500, description="Zeichen pro Web-Treffer im Prompt")
     llm_web_max: int = Field(default=8, description="max. Web-Treffer im Prompt")
     llm_num_ctx: int = Field(
@@ -296,6 +319,10 @@ class CollectSettings(BaseSettings):
         default="",
         description="Modell fürs Query-Rewrite; leer = decompose_model",
     )
+    rewrite_max_content_terms: int = Field(
+        default=6,
+        description="Referential-Gate: mehr Inhaltswörter → Frage gilt als "
+                    "eigenständig (kein Rewrite, keine History-Anbindung)")
 
     # ── Embeddings ──────────────────────────────────────────────────────
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"

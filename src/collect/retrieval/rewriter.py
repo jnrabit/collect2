@@ -22,7 +22,9 @@ from collect.retrieval.service import query_terms
 
 logger = logging.getLogger(__name__)
 
-MAX_CONTENT_TERMS = 6  # mehr Inhaltswörter → eigenständige Frage
+# mehr Inhaltswörter → eigenständige Frage. Konfigurierbar
+# (COLLECT_REWRITE_MAX_CONTENT_TERMS); Alias bindet beim Start.
+MAX_CONTENT_TERMS = settings.rewrite_max_content_terms
 
 # Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Bewusst OHNE
 # Artikel (der/die/das als Artikel) — nur eindeutig rückverweisende Formen.
@@ -46,7 +48,7 @@ def is_referential(query: str) -> bool:
     q = query.strip()
     if not q:
         return False
-    if len(query_terms(q)) > MAX_CONTENT_TERMS:
+    if len(query_terms(q)) > settings.rewrite_max_content_terms:
         return False
     words = set(re.findall(r"[a-zäöüß]+", q.lower()))
     return bool(words & _PRONOUNS) or bool(_LEAD_IN.match(q))

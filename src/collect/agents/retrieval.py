@@ -11,11 +11,16 @@ from typing import Optional
 
 from collect.agents.base import BaseAgent
 from collect.bus import Message
+from collect.config import settings
 from collect.retrieval.service import VaultSearcher
 from collect.retrieval.zones import classify_zone
 
-MAX_HITS = 8
-MAX_CONTENT = 1200
+# Konfigurierbar (COLLECT_RETRIEVAL_MAX_HITS / _MAX_CONTENT_CHARS);
+# Modul-Aliase binden beim Prozess-Start, Laufzeit nutzt settings.
+# ACHTUNG: max_content_chars MUSS ≥ llm_doc_chars sein — der Bus kürzt hier
+# ZUERST, ein kleinerer Wert kastriert llm_doc_chars still.
+MAX_HITS = settings.retrieval_max_hits
+MAX_CONTENT = settings.retrieval_max_content_chars
 
 
 class RetrievalAgent(BaseAgent):
@@ -42,7 +47,7 @@ class RetrievalAgent(BaseAgent):
             vecs = list(self.embedder.embed(subqueries))
             merged = self.searcher.search(vecs, top_k=30, query_text=query,
                                           profile=profile)
-            hits = self.searcher.hits(merged, MAX_HITS)
+            hits = self.searcher.hits(merged, settings.retrieval_max_hits)
             best = self.searcher.best_distance(merged)
 
         verdict = classify_zone(best, trust_threshold=self.trust_threshold)
@@ -53,7 +58,7 @@ class RetrievalAgent(BaseAgent):
                 "distance": round(h.distance, 2),
                 "title": h.title,
                 "source": h.source,
-                "content": h.content[:MAX_CONTENT],
+                "content": h.content[:settings.retrieval_max_content_chars],
             } for h in hits],
             "zone": verdict.zone,
             "best_distance": verdict.best_distance,

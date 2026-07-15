@@ -22,15 +22,19 @@ from collect.bus import Message
 from collect.config import settings
 from collect.search.web import WebSearcher, clean_query_for_search
 
-MAX_SNIPPETS = 6
-MAX_SNIPPET_CHARS = 1200
-PAGE_FETCH_COUNT = 2
-PAGE_CHUNK_CHARS = 1000
-PAGE_TOP_CHUNKS = 3
+# Konfigurierbar (COLLECT_WEB_SEARCH_MAX_SNIPPETS etc.); Modul-Aliase
+# binden beim Prozess-Start, Laufzeit nutzt settings.
+MAX_SNIPPETS = settings.web_search_max_snippets
+MAX_SNIPPET_CHARS = settings.web_search_snippet_chars
+PAGE_FETCH_COUNT = settings.web_search_page_fetches
+PAGE_CHUNK_CHARS = settings.web_search_page_chunk_chars
+PAGE_TOP_CHUNKS = settings.web_search_page_top_chunks
 
 
-def _chunk_text(text: str, chunk_size: int = PAGE_CHUNK_CHARS) -> list[str]:
+def _chunk_text(text: str, chunk_size: Optional[int] = None) -> list[str]:
     """Teilt Text in ~gleich große Chunks an Satzgrenzen."""
+    if chunk_size is None:
+        chunk_size = settings.web_search_page_chunk_chars
     if len(text) <= chunk_size:
         return [text]
     parts = re.split(r"(?<=[.!?])\s+", text)
@@ -95,20 +99,20 @@ class WebSearchAgent(BaseAgent):
                 "doc_id": f"web:{r['url'][:80]}",
                 "title": r["title"],
                 "source": r["url"],
-                "content": r["content"][:MAX_SNIPPET_CHARS],
+                "content": r["content"][:settings.web_search_snippet_chars],
             })
 
         # Page-Fetch: Top-Ergebnisse vollständig abrufen, embedden, relevante
         # Chunks per Cosine auswählen. Ergänzt die Suchergebnisse.
         t0 = time.perf_counter()
-        for i, r in enumerate(results[:PAGE_FETCH_COUNT]):
+        for i, r in enumerate(results[:settings.web_search_page_fetches]):
             if not r.get("url"):
                 continue
             try:
                 page_text = self.searcher.fetch_page(r["url"], max_chars=8000)
                 if not page_text or len(page_text) < 200:
                     continue
-                chunks = _chunk_text(page_text, PAGE_CHUNK_CHARS)
+                chunks = _chunk_text(page_text)
                 if not chunks:
                     continue
 
@@ -123,7 +127,7 @@ class WebSearchAgent(BaseAgent):
                     chunk_vecs.append(vec)
 
                 sims = np.stack(chunk_vecs) @ query_vec
-                for idx in np.argsort(-sims)[:PAGE_TOP_CHUNKS]:
+                for idx in np.argsort(-sims)[:settings.web_search_page_top_chunks]:
                     if sims[idx] < 0.3:
                         continue
                     url_short = r["url"].split("/")[-1][:40] or r["url"][:40]
@@ -131,7 +135,7 @@ class WebSearchAgent(BaseAgent):
                         "doc_id": f"web:{r['url'][:80]}#chunk{idx}",
                         "title": f"{r['title']} [{url_short}]",
                         "source": r["url"],
-                        "content": chunks[idx][:MAX_SNIPPET_CHARS],
+                        "content": chunks[idx][:settings.web_search_snippet_chars],
                     })
             except Exception as e:
                 self.log.debug("Page-Fetch %s fehlgeschlagen: %s",
@@ -139,7 +143,9 @@ class WebSearchAgent(BaseAgent):
 
         elapsed = (time.perf_counter() - t0) * 1000
         self.publish("web_response", "web_response", {
-            "hits": hits[:MAX_SNIPPETS + PAGE_FETCH_COUNT * PAGE_TOP_CHUNKS],
+            "hits": hits[:settings.web_search_max_snippets
+                          + settings.web_search_page_fetches
+                          * settings.web_search_page_top_chunks],
             "count": len(hits),
             "explicit": explicit,
             "search_query": search_query,

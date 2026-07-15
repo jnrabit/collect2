@@ -23,7 +23,8 @@ from collect.config import settings
 
 logger = logging.getLogger(__name__)
 
-MAX_SUBQUERIES = 3
+# Konfigurierbar (COLLECT_DECOMPOSE_MAX_SUBQUERIES); Alias bindet beim Start.
+MAX_SUBQUERIES = settings.decompose_max_subqueries
 
 _MULTI = re.compile(
     r"\b(und|and|sowie|versus|vs|zwischen|between|unterschied|difference|"
@@ -111,7 +112,7 @@ class QueryDecomposer:
             if len(s) >= 3 and key not in seen:
                 seen.add(key)
                 out.append(s)
-        return out[:MAX_SUBQUERIES]
+        return out[:settings.decompose_max_subqueries]
 
     def decompose(self, query: str) -> dict:
         """→ {original, subqueries, skipped, cache_hit, duration_ms}.

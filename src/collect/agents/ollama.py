@@ -21,14 +21,16 @@ logger = logging.getLogger(__name__)
 # Grenze hinaus und leakt `<|im_start|>user`, halluzinierte Fake-Runden und den
 # Prompt-Schwanz. Wir setzen stop selbst; sanitize_completion ist Defense-in-Depth.
 _STOP_SEQUENCES = ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
-_NUM_PREDICT_CAP = 1024  # Sicherheitsnetz gegen Weglaufen (Antworten sind kürzer)
+# Sicherheitsnetz gegen Weglaufen (Antworten sind kürzer). Konfigurierbar
+# (COLLECT_LLM_NUM_PREDICT); Alias bindet beim Start, Laufzeit nutzt settings.
+_NUM_PREDICT_CAP = settings.llm_num_predict
 
 
 def _base_options(temperature: float) -> dict:
     return {
         "temperature": temperature,
         "stop": _STOP_SEQUENCES,
-        "num_predict": _NUM_PREDICT_CAP,
+        "num_predict": settings.llm_num_predict,
         # OHNE num_ctx nutzt Ollama nur 4096 Tokens (nicht die 32k des Modells)
         # → tiefe Prompts würden still abgeschnitten, die Tiefe verpufft.
         "num_ctx": settings.llm_num_ctx,
