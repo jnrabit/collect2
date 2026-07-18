@@ -70,6 +70,7 @@ _CORE_MODULES = [
     "collect.prompts",
     "collect.patterns",
     "collect.eval",
+    "collect.vault_cli",
     "collect.harvest.arxiv",
     "collect.harvest.rfc",
 ]

@@ -41,6 +41,7 @@ collect-repl = "collect.repl:main"
 collect-api = "collect.api:main"
 collect-harvest = "collect.harvest.cli:main"
 collect-eval = "collect.eval:main"
+collect-vault = "collect.vault_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
