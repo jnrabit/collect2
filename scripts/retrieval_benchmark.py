@@ -20,21 +20,12 @@ import json
 import statistics
 import sys
 
-# (query, erwartete_route ∈ {general, both, code, *}, muss_antwortbar ∈ {True, False, None},
-#  erwartete_begriffe in Top-3-Titeln/-Texten)
-BENCH = [
-    ("What is Apache Spark?", "*", True, ["spark"]),
-    ("How does the TLS handshake work?", "*", True, ["tls", "transport layer", "handshake protocol", "ssl"]),
-    ("transformer neural network attention mechanism", "*", True, ["attention", "transformer"]),
-    ("What is quantum entanglement?", "*", True, ["entangle", "quantum"]),
-    ("HTTP request methods GET POST", "*", True, ["http"]),
-    ("How does an HTTP request and response work?", "*", True, ["http", "request", "response"]),
-    ("What is HTTPS and TLS encryption?", "*", True, ["https", "tls", "encrypt", "secur"]),
-    ("Was ist der Unterschied zwischen TCP und UDP?", "*", True, ["tcp", "udp", "transport"]),
-    ("Python global interpreter lock", "*", True, ["python", "gil", "interpreter", "thread"]),
-    ("xyzzy plugh frobnicate quux blorp", "*", False, []),
-    ("mein lieblingsessen ist pizza mit ananas", "*", False, []),
-]
+# Query-Set zentral in collect.eval (EINE Messlatte, nicht zwei driftende) —
+# hier nur ins alte Tuple-Format konvertiert.
+from collect.eval import EVAL_QUERIES
+
+BENCH = [(q["query"], q["route"], q["answerable"], q["terms"])
+         for q in EVAL_QUERIES]
 
 
 def _build_service():

@@ -69,6 +69,7 @@ _CORE_MODULES = [
     "collect.retrieval.profiles",
     "collect.prompts",
     "collect.patterns",
+    "collect.eval",
     "collect.harvest.arxiv",
     "collect.harvest.rfc",
 ]

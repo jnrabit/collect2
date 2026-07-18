@@ -215,7 +215,8 @@ class RetrievalService:
 
     # ── Hauptpfad ────────────────────────────────────────────────────────
 
-    def retrieve(self, query: str, top_k: int = 30, max_hits: int = 10) -> RetrievalResult:
+    def retrieve(self, query: str, top_k: int = 30, max_hits: int = 10,
+                 profile: Optional[dict] = None) -> RetrievalResult:
         # 1. Translate
         effective = query
         translation = None
@@ -249,12 +250,14 @@ class RetrievalService:
         # Zone aus min(dist) der UNGETRIMMTEN Liste — das Rerank ändert nur
         # die Reihenfolge (welche Docs den LLM-Prompt erden), nie die Zone.
         if route in (ROUTE_GENERAL, ROUTE_BOTH):
-            merged = self.general.search(vecs, top_k, query_text=effective)
+            merged = self.general.search(vecs, top_k, query_text=effective,
+                                         profile=profile)
             result.general = VaultResult(hits=self.general.hits(merged, max_hits))
             result.general.verdict = classify_zone(VaultSearcher.best_distance(merged))
 
         if route in (ROUTE_CODE, ROUTE_BOTH):
-            merged = self.code.search(vecs, top_k, query_text=effective)
+            merged = self.code.search(vecs, top_k, query_text=effective,
+                                      profile=profile)
             result.code = VaultResult(hits=self.code.hits(merged, max_hits))
             result.code.verdict = classify_zone(
                 VaultSearcher.best_distance(merged),

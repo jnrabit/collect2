@@ -26,8 +26,8 @@ from pathlib import Path
 from collect.client import ask
 from collect.config import settings
 
-HELP = ("Befehle: /status  /review  /facts  /session  /retrieval  /help  /quit — "
-        "alles andere geht als Frage an den Stack. "
+HELP = ("Befehle: /status  /review  /facts  /session  /retrieval  /vault  /help  "
+        "/quit — alles andere geht als Frage an den Stack. "
         "Prefix [profil] forced den Retrieval-Modus (z.B. [precise] Was ist X?).")
 
 
@@ -197,6 +197,70 @@ def cmd_retrieval(args: str, context: dict) -> str:
     return f"/retrieval [set <profil>] [test <query>] — Profile: {', '.join(profiles)}"
 
 
+def format_vault_hits(data: dict) -> str:
+    """Rohe Retrieval-Antwort → lesbare Top-Treffer-Liste (Debug-Ansicht)."""
+    hits = data.get("hits") or []
+    head = (f"Zone {data.get('zone', '?')} · beste Distance "
+            f"{data.get('best_distance', 0):.1f} · {len(hits)} Treffer")
+    lines = [head]
+    for h in hits[:5]:
+        lines.append(f"  [{h.get('distance', 0):5.1f}] {h.get('title', '—')[:60]}")
+        content = (h.get("content") or "").replace("\n", " ")[:110]
+        if content:
+            lines.append(f"          {content}")
+    return "\n".join(lines)
+
+
+def cmd_vault(args: str) -> str:
+    """Rohe Vault-Suche ohne LLM — das Debug-Werkzeug zum Eval ("warum ist
+    die Zone GRAUZONE?"). Geht über den laufenden Service (retrieval_request
+    auf dem Bus), OHNE Rewrite/Übersetzung — bewusst die rohe Sicht."""
+    parts = args.split(maxsplit=1)
+    if not parts or parts[0] not in ("suche", "search") or len(parts) < 2:
+        return ("/vault suche <query> — Top-5 rohe Vault-Treffer ohne LLM "
+                "(auch: /vault suche code: <query> für den Code-Vault)")
+    query = parts[1].strip()
+    kind = "retrieval"
+    if query.lower().startswith("code:"):
+        kind, query = "code_retrieval", query[5:].strip()
+
+    import json as _json
+    import time as _time
+
+    import redis as redis_lib
+
+    from collect.bus import Message, new_id
+
+    r = redis_lib.Redis(host=settings.redis_host, port=settings.redis_port,
+                        db=settings.redis_db, decode_responses=True)
+    cid = new_id()
+    prefix = settings.channel_prefix
+    ps = r.pubsub(ignore_subscribe_messages=True)
+    ps.subscribe(f"{prefix}{kind}_response")
+    try:
+        r.publish(f"{prefix}{kind}_request", Message(
+            type=f"{kind}_request",
+            data={"query": query, "subqueries": [query]},
+            correlation_id=cid, source="repl").to_json())
+        deadline = _time.time() + settings.retrieval_timeout + 10
+        while _time.time() < deadline:
+            raw = ps.get_message(timeout=1.0)
+            if raw is None:
+                continue
+            try:
+                msg = _json.loads(raw["data"])
+            except (ValueError, TypeError):
+                continue
+            if msg.get("correlation_id") == cid:
+                return format_vault_hits(msg.get("data", {}))
+        return "⚠️ Keine Antwort — läuft collect-agents?"
+    finally:
+        try:
+            ps.close()
+        finally:
+            r.close()
+
+
 def repl(input_fn=input, print_fn=print) -> int:
     print_fn(f"{settings.display_name} REPL — {HELP}")
     _session_store = _store()
@@ -225,6 +289,8 @@ def repl(input_fn=input, print_fn=print) -> int:
         elif line.startswith("/retrieval"):
             args = line[len("/retrieval"):].strip()
             print_fn(cmd_retrieval(args, context))
+        elif line.startswith("/vault"):
+            print_fn(cmd_vault(line[len("/vault"):].strip()))
         elif line.startswith("/"):
             print_fn(f"Unbekannter Befehl: {line} — {HELP}")
         else:
