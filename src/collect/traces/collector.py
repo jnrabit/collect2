@@ -97,20 +97,33 @@ class TraceCollector:
         except Exception as e:  # noqa: BLE001
             logger.warning("Outcome-Write fehlgeschlagen (ignoriert): %s", e)
 
-    def load_all(self) -> list[dict]:
-        """Alle Traces aus allen Tagesdateien (chronologisch)."""
+    def load_all(self, dedup: bool = True) -> list[dict]:
+        """Alle Traces aus allen Tagesdateien (chronologisch).
+
+        dedup=True (Default): exakte Duplikate über die trace_id zusammenfassen
+        — die deterministische Pipeline ruft z. B. den Rewriter mehrfach pro
+        Query mit identischem Prompt auf, was denselben Trace mehrfach schreibt.
+        Fürs Training zählt nur das Unique."""
         out: list[dict] = []
+        seen: set[str] = set()
         if not self.base_dir.exists():
             return out
         for f in sorted(self.base_dir.glob("*.jsonl")):
-            if f.name == "outcomes.jsonl":
+            if f.name in ("outcomes.jsonl", "validation_report.json"):
                 continue
             for line in f.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    try:
-                        out.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
+                if not line.strip():
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tid = d.get("meta", {}).get("trace_id")
+                if dedup and tid:
+                    if tid in seen:
+                        continue
+                    seen.add(tid)
+                out.append(d)
         return out
 
     def stats(self) -> dict:

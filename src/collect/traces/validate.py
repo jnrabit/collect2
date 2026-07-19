@@ -199,9 +199,11 @@ class TraceValidator:
 
     # ── Batch + Report ───────────────────────────────────────────────────
 
-    def validate_all(self) -> dict:
+    def validate_all(self, step_kind: Optional[str] = None) -> dict:
         t0 = time.perf_counter()
         traces = self._load()
+        if step_kind:
+            traces = [t for t in traces if t.get("meta", {}).get("step_kind") == step_kind]
         results = [self.validate(t) for t in traces]
         token_counts = [r["token_count"] for r in results if r["token_count"]]
         ok = sum(1 for r in results if r["ok"])
@@ -232,6 +234,11 @@ class TraceValidator:
         }
 
     def _load(self) -> list[dict]:
+        # Dedup über trace_id (die Pipeline schreibt denselben Trace mehrfach)
+        from collect.traces.collector import TraceCollector
+        return TraceCollector(base_dir=self.traces_dir).load_all()
+
+    def _load_raw(self) -> list[dict]:
         out = []
         if not self.traces_dir.exists():
             return out

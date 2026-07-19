@@ -24,7 +24,7 @@ def cmd_stats(args) -> int:
 def cmd_validate(args) -> int:
     from collect.traces.validate import TraceValidator, print_report
     v = TraceValidator(tokenizer_name=args.tokenizer)
-    report = v.validate_all()
+    report = v.validate_all(step_kind=args.step_kind)
     try:
         v.traces_dir.mkdir(parents=True, exist_ok=True)
         (v.traces_dir / "validation_report.json").write_text(
@@ -103,6 +103,8 @@ def main() -> int:
 
     pv = sub.add_parser("validate", help="Traces durchs echte Template prüfen")
     pv.add_argument("--tokenizer", default=None)
+    pv.add_argument("--step-kind", default=None,
+                    help="nur diese Kategorie prüfen (z. B. rewrite)")
     pv.set_defaults(fn=cmd_validate)
 
     pc = sub.add_parser("curate", help="Interaktive Kuration + Negativ-Synthese")
