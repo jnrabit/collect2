@@ -97,5 +97,29 @@ def rewrite(query: str, history: list,
     applied = rewritten != query
     if applied:
         logger.info("Rewrite: %r → %r", query[:50], rewritten[:70])
+    _record_rewrite_trace(prompt, rewritten)
     return {"original": query, "rewritten": rewritten,
             "applied": applied, "duration_ms": (time.time() - t0) * 1000}
+
+
+# Trace-Einhängung (Auftrag: der Rewriter ist das primäre Verhaltensziel).
+# Nur mitschreiben, nie eingreifen — record_if_enabled ist no-op wenn aus und
+# wirft nie. step_kind="rewrite"; das Target ist die umgeschriebene Query.
+_REWRITE_TRACE_SYSTEM = (
+    "Du bist ein Query-Rewriter für ein Retrieval-System. Forme die "
+    "referenzielle Folgefrage zu EINER eigenständigen Suchanfrage um, die "
+    "ohne den Verlauf verständlich ist. Antworte nur mit der Suchanfrage. "
+    "Ist die Frage bereits eigenständig, antworte mit: UNCHANGED"
+)
+
+
+def _record_rewrite_trace(prompt: str, rewritten: str) -> None:
+    try:
+        from collect.traces.collector import record_if_enabled
+        record_if_enabled("rewrite", [
+            {"role": "system", "content": _REWRITE_TRACE_SYSTEM},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": rewritten},
+        ])
+    except Exception:  # noqa: BLE001 — Tracing darf den Rewrite nie brechen
+        pass

@@ -51,6 +51,26 @@ class LLMAgent(BaseAgent):
             "web_response": self.on_contribution("web"),
         }
 
+    def _record_trace(self, site: str, prompt: str, response: str,
+                      state: dict, facts: list | None = None) -> None:
+        # Finale Antwort-Generierung = step_kind "answer" (Trace-Auftrag).
+        from collect.traces.collector import record_if_enabled
+        zones = [c.get("zone") for k, c in state["contribs"].items()
+                 if k in ("retrieval", "code_retrieval")]
+        zone = zones[0] if zones else "FALLBACK"
+        web_contrib = state["contribs"].get("web")
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response.strip()},
+        ]
+        record_if_enabled("answer", messages, extra={
+            "zone": zone,
+            "facts_used": len(facts or []),
+            "has_file": bool(state["contribs"].get("file", {}).get("chunks")),
+            "has_web": bool(web_contrib and web_contrib.get("count")),
+        })
+
     _EARLY_TTL = 120.0  # Sek.: verwaiste Early-Beiträge (Request kam nie) verwerfen
     _EARLY_MAX = 256
 
@@ -167,8 +187,9 @@ class LLMAgent(BaseAgent):
                 "content": content.strip(), "skipped": False,
                 "model": settings.main_model,
                 "facts_used": len(facts),
-                **stats,  # eval_count, tok_per_s (falls Streaming-Backend)
+                **stats,
             }, cid)
+            self._record_trace("llm", prompt, content, state, facts)
             self.log.info("%s: Antwort generiert (%d Zeichen, %d Fakten, %s tok/s)",
                           cid[:8], len(content), len(facts), stats.get("tok_per_s"))
         except Exception as e:
