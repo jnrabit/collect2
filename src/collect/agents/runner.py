@@ -56,7 +56,7 @@ def build_agents(bus, generate_fn=None):
                          settings.code_cache_file,
                          settings.code_field_file)
 
-    return [
+    agents = [
         OrchestratorAgent(bus, router, translator, decomposer),
         RetrievalAgent(bus, general, embedder, kind="retrieval"),
         RetrievalAgent(bus, code, embedder, kind="code_retrieval",
@@ -71,6 +71,13 @@ def build_agents(bus, generate_fn=None):
         FileContextAgent(bus, embedder=embedder),
         WebSearchAgent(bus, embed_fn=embedder.embed_one),
     ]
+    # Serving-Agent (Modell-getriebene Pipeline) gehoert zum separaten
+    # K4N0N3-Auftrag und wird NUR bei explizitem Opt-in in den Bus gehaengt —
+    # der Trace-Auftrag darf das Agentenverhalten nicht aendern.
+    if settings.qwythos_enabled:
+        from collect.agents.qwythos import QwythosAgent
+        agents.append(QwythosAgent(bus, generate_fn=generate_fn))
+    return agents
 
 
 def _start_heartbeat(bus, agents) -> threading.Thread:
