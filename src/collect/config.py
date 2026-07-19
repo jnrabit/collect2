@@ -196,6 +196,32 @@ class CollectSettings(BaseSettings):
                 "web suche|web recherche|im internet|online suche",
         description="Regex-Trigger für explizite Web-Recherche-Anfrage (case-insensitiv)")
 
+    # ── Qwythos-Serving (separater K4N0N3-Auftrag, Default aus) ──────────
+    qwythos_enabled: bool = Field(
+        default=False,
+        description="Qwythos-Modell-getriebener Agent statt Pipeline. "
+                    "Erfordert ein Tool-Calling-fähiges Modell in Ollama "
+                    "(/api/chat mit tools). Gehört zum K4N0N3-Serving-Auftrag.")
+
+    # ── Trace-Pipeline (Trainingsdaten-Sammlung, CPU-only) ───────────────
+    traces_enabled: bool = Field(
+        default=True,
+        description="Trace-Collector: Modellaufrufe als Trainings-Traces "
+                    "aufzeichnen (rotierend data/traces/YYYY-MM-DD.jsonl)")
+    traces_dir: Path = Field(
+        default_factory=lambda: Path.home() / "collect2" / "data" / "traces",
+        description="Verzeichnis für die rotierenden Trace-JSONL-Dateien")
+    traces_seq_len: int = Field(
+        default=2048,
+        description="Ziel-seq_len für den Validator-Grenzwert (Längen-Report "
+                    "entscheidet 1024 vs. 2048 im Trainings-Auftrag)")
+    traces_tokenizer: str = Field(
+        default="Qwen/Qwen2.5-7B-Instruct",
+        description="Tokenizer für den Template-Render-Check. MUSS zum "
+                    "Inferenzmodell passen (Qwythos = Qwen3.5) — sonst laufen "
+                    "Trainings- und Inferenz-Template auseinander. Als HF-Repo "
+                    "oder lokaler Pfad; Fallback nur mit klarer Meldung.")
+
     # ── Grounding & Lernen (Ossifikat) ──────────────────────────────────
     ossifikat_db: Path = Field(
         default_factory=lambda: Path.home() / "collect2" / "data" / "ossifikat.db",
