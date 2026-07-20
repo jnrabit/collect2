@@ -86,6 +86,17 @@ def test_collector_record_rotating(tmp_path):
     assert loaded[0]["tools"] == []  # tools-Feld immer vorhanden
 
 
+def test_load_all_ignores_subdir_derivatives(tmp_path):
+    """Derivate (curated/) dürfen von load_all NICHT als Traces gelesen werden."""
+    c = TraceCollector(base_dir=tmp_path)
+    c.record("rewrite", _entry_dict("rewrite")["messages"])
+    curated = tmp_path / "curated"
+    curated.mkdir()
+    (curated / "training_set.jsonl").write_text(
+        json.dumps(_entry_dict("rewrite")) + "\n", encoding="utf-8")
+    assert len(c.load_all()) == 1  # nur der echte Trace, nicht das Derivat
+
+
 def test_collector_outcome_separate_file(tmp_path):
     c = TraceCollector(base_dir=tmp_path)
     c.record_outcome("wf-1", "trust_reached")

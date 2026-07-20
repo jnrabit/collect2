@@ -41,12 +41,16 @@ def cmd_curate(args) -> int:
     if not traces:
         print("Keine Traces gefunden.")
         return 1
-    curation_path = Path(settings.traces_dir) / "curation.jsonl"
-    result = curate_interactive(traces, curation_path)
+    # Derivate in curated/ — NICHT in traces_dir selbst, sonst liest load_all
+    # sie beim naechsten Lauf als Traces wieder ein (non-rekursiver Glob ⇒
+    # ein Unterordner ist automatisch ausgeschlossen).
+    curated_dir = Path(settings.traces_dir) / "curated"
+    curated_dir.mkdir(parents=True, exist_ok=True)
+    result = curate_interactive(traces, curated_dir / "curation.jsonl")
     print(f"\nKuriert: {result['kept']} gut, {result['skipped']} übersprungen")
     if args.negatives:
         negs = build_negatives(traces)
-        neg_path = Path(settings.traces_dir) / f"{date.today().isoformat()}_synthetic.jsonl"
+        neg_path = curated_dir / f"{date.today().isoformat()}_synthetic.jsonl"
         with open(neg_path, "a", encoding="utf-8") as f:
             for n in negs:
                 f.write(json.dumps(n, ensure_ascii=False) + "\n")
