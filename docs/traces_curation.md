@@ -32,6 +32,8 @@ Ein Rewrite-Target wird angenommen, wenn ALLE gelten:
 | zu kurz | < 4 Wörter (kein tragfähiger Standalone) | **auto** |
 | Antezedent verloren | wurde zur generischen Definitionsfrage (Thema weg) | Urteil |
 | zerhackter/erfundener Begriff | z. B. „Lorenz-Akt attractor" | Urteil |
+| Bedeutung verdreht | Thema erhalten, aber die **Frage** ist eine andere geworden | Urteil |
+| Grammatik/Satz kaputt | falscher Artikel, abgebrochener Satz | Urteil |
 
 „auto" = mechanisch entscheidbar → Vor-Filter. „Urteil" = semantisch → dem
 Menschen als Stichprobe vorlegen.
@@ -48,6 +50,31 @@ Menschen als Stichprobe vorlegen.
 - `und worauf achten?` → „…beachten **Sie**…Überlapplen" (Sie + Tippfehler)
 
 Diese 5 sind die Kalibrier-Beispiele der Regeln — bei Unsicherheit hier abgleichen.
+
+## Charge 2 (2026-07-20, `scripts/collect_rewrite_traces.py`)
+
+31 neue Traces, mechanisch 6 abgelehnt, von 26 Urteilsfällen **15 angenommen,
+11 abgelehnt**. Positive gesamt damit 32.
+
+Zwei Regeln wurden hier **erst ergänzt**, weil Charge 1 die Fälle nicht hatte
+(Reihenfolge laut „Wenn du selbst kurierst": erst Regel, dann Verdikt):
+
+- **Bedeutung verdreht** — das Thema stimmt, die Frage nicht mehr:
+  „wann pausiert er die Anwendung?" → „Wann pausiert der Garbage Collector
+  **seine Arbeit**?" (Stop-the-World-Frage ist weg);
+  „und **zur** Inferenzzeit?" → „Wie **beeinflusst** Dropout **die**
+  Inferenzzeit?" (Zeitpunkt → Laufzeit).
+- **Grammatik/Satz kaputt** — „Wie funktioniert **der** Konfliktverarbeitung…",
+  „Welchem Teil des CAP-Theorems gewähren Datenbanken meist **nur**?"
+
+Weitere Kalibrier-Ablehnungen der bestehenden Regeln: erfundene Begriffe
+(„JWT-Gültigkeitseinheit", „Zwischenbotschaft", „ISO-Levelen") und eine
+halluzinierte Aufzählung („Btrfs, XFS **und die Linux-Nutzer**").
+
+**Offen, bewusst nicht geregelt:** Kleinschreibung im Target
+(„why does the python gil hinder cpu-bound code?") — angenommen, weil die
+Rubrik dazu keine Regel hat. Wenn das Modell später inkonsistent
+groß-/kleinschreibt, ist das der erste Verdächtige.
 
 ## Think-Synthese (deterministisch, kein LLM)
 

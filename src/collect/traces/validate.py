@@ -36,6 +36,15 @@ _DE_STOPWORDS = frozenset(
     "nur sich zur zum beim vom im am um durch bei nach vor über unter gegen "
     "ohne seit bis als dann haben hat hatte kann können muss müssen soll "
     "diese dieser dieses jede alle alles andere dabei damit deshalb".split())
+# Gegenprobe Englisch: ein reiner DE-Anteil kippt bei kurzen Fachfragen ins
+# Falsche — „Welche Speculative-Decoding-Varianten benötigen kein zweites
+# Modell?" hat kaum Stoppwörter und landete unter 15 %. Der Vergleich
+# DE-gegen-EN trägt auch bei kurzen Sätzen.
+_EN_STOPWORDS = frozenset(
+    "the and but for with from into that this these those what how why when "
+    "where which who does did are was were will would can could should have "
+    "has had you your they them their its not out about over under between "
+    "than then there here more most some any all each other".split())
 # Sie-Register-Marker (Groß-Sie / Höflichkeitsformen)
 _SIE_MARKERS = re.compile(
     r"\b(Sie|Ihnen|Ihre|Ihrer|Ihren|Ihrem|Ihres)\b")
@@ -48,7 +57,10 @@ def detect_language(text: str) -> str:
     if not words:
         return "unknown"
     de = sum(1 for w in words if w in _DE_STOPWORDS)
-    return "de" if de / len(words) >= 0.15 else "other"
+    en = sum(1 for w in words if w in _EN_STOPWORDS)
+    if de == 0 and en == 0:
+        return "unknown"
+    return "de" if de >= en else "other"
 
 
 def approx_tokens(text: str) -> int:
@@ -130,6 +142,18 @@ class TraceValidator:
                 "trace_id": trace.get("meta", {}).get("trace_id", "?"),
                 "token_count": token_count}
 
+    @staticmethod
+    def _source_language(messages: list[dict]) -> str:
+        """Sprache der Nutzer-Eingabe; bei rewrite die FOLGEFRAGE, nicht der
+        deutsche Instruktionsrahmen drumherum."""
+        for m in messages:
+            if m.get("role") != "user":
+                continue
+            content = m.get("content", "") or ""
+            hit = re.search(r"FOLGEFRAGE:\s*(.+?)(?:\n|$)", content)
+            return detect_language(hit.group(1) if hit else content)
+        return "unknown"
+
     def _check_tool_calls(self, messages: list[dict], trace: dict) -> list[dict]:
         names = valid_tool_names()
         # Pflichtparameter je Tool aus dem Trace-tools-Feld (falls vorhanden)
@@ -184,6 +208,11 @@ class TraceValidator:
         return issues
 
     def _check_register_language(self, messages: list[dict]) -> list[dict]:
+        """Sprache: NICHT „muss deutsch sein" — der Rewrite-Prompt verlangt
+        ausdrücklich, die Sprache der Folgefrage beizubehalten. Geprüft wird
+        also gegen die Quellsprache, sonst gilt jedes korrekte englische
+        Rewrite als Fehler."""
+        expected = self._source_language(messages)
         issues = []
         for i, m in enumerate(messages):
             if m.get("role") != "assistant" or m.get("tool_calls"):
@@ -191,8 +220,10 @@ class TraceValidator:
             content = _THINK_RE.sub("", m.get("content", "") or "").strip()
             if len(content) < 20:
                 continue
-            if detect_language(content) == "other":
-                issues.append({"kind": "language", "detail": f"msg {i}: answer nicht deutsch"})
+            lang = detect_language(content)
+            if expected != "unknown" and lang != "unknown" and lang != expected:
+                issues.append({"kind": "language",
+                               "detail": f"msg {i}: Sprache {lang}, Quelle {expected}"})
             if _SIE_MARKERS.search(content):
                 issues.append({"kind": "register", "detail": f"msg {i}: Sie-Register in answer"})
         return issues

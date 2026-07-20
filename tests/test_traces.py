@@ -134,6 +134,30 @@ def test_detect_language():
     assert detect_language("the quick brown fox jumps over lazy") == "other"
 
 
+def test_detect_language_short_german_question():
+    """Kurze Fachfrage mit wenigen Stoppwörtern darf nicht als 'other' kippen."""
+    assert detect_language(
+        "Welche Speculative-Decoding-Varianten benötigen kein zweites Modell?") == "de"
+
+
+def test_validator_keeps_english_rewrite(tmp_path):
+    """Der Rewrite-Prompt verlangt Spracherhalt — englisch rein, englisch raus."""
+    e = _entry_dict("rewrite", target="How is a WebSocket connection kept alive?")
+    e["messages"][1]["content"] = ("GESPRÄCH:\nNutzer: How does a handshake work?\n\n"
+                                   "FOLGEFRAGE: and how is it kept alive?\n\n")
+    v = TraceValidator(traces_dir=tmp_path)
+    assert not [i for i in v._check_register_language(e["messages"])
+                if i["kind"] == "language"]
+
+
+def test_validator_flags_language_switch(tmp_path):
+    e = _entry_dict("rewrite", target="How is a WebSocket connection kept alive?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wie wird die am Leben gehalten?\n"
+    v = TraceValidator(traces_dir=tmp_path)
+    assert any(i["kind"] == "language"
+               for i in v._check_register_language(e["messages"]))
+
+
 def test_validator_flags_sie_register(tmp_path):
     e = _entry_dict(target="Bitte beachten Sie Ihre Einstellungen sorgfältig genau.")
     v = TraceValidator(traces_dir=tmp_path)
