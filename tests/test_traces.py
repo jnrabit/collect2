@@ -206,8 +206,50 @@ def test_negative_unchanged_skips_trivial_target():
     assert curate.make_negative_unchanged(_entry_dict("rewrite", target="und dafür?")) is None
 
 
+def test_prefilter_passthrough():
+    e = _entry_dict("rewrite", target="und wofür das?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wofür das?\n\nEigenständige Frage:"
+    assert curate.prefilter(e) is not None
+
+
+def test_prefilter_leading_conjunction():
+    e = _entry_dict("rewrite", target="und wie viel kostet LoRA-Finetuning genau?")
+    assert "Konjunktion" in curate.prefilter(e)
+
+
+def test_prefilter_sie_register():
+    e = _entry_dict("rewrite", target="Was beachten Sie bei Prefetch-Layern?")
+    assert curate.prefilter(e) == "Sie-Register"
+
+
+def test_prefilter_too_short():
+    e = _entry_dict("rewrite", target="Was ist Burst-Traffic?")
+    assert "kurz" in curate.prefilter(e)
+
+
+def test_prefilter_passes_good_rewrite():
+    e = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:"
+    assert curate.prefilter(e) is None
+
+
+def test_prefilter_ignores_non_rewrite():
+    assert curate.prefilter(_entry_dict("answer", target="und kurz")) is None
+
+
+def test_curate_prefilter_auto_rejects(tmp_path):
+    good = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    good["messages"][1]["content"] = "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:"
+    bad = _entry_dict("rewrite", target="und wie das?")
+    verdicts = iter(["g"])  # nur der survivor wird gefragt
+    result = curate.curate_interactive(
+        [good, bad], tmp_path / "curation.jsonl",
+        input_fn=lambda _: next(verdicts, "q"), print_fn=lambda *a: None)
+    assert result["auto_rejected"] == 1 and result["kept"] == 1
+
+
 def test_curate_interactive_writes_marker(tmp_path):
-    traces = [_entry_dict("rewrite")]
+    traces = [_entry_dict("rewrite", target="Wie funktioniert das TLS-Protokoll genau?")]
     path = tmp_path / "curation.jsonl"
     verdicts = iter(["g"])
     result = curate.curate_interactive(

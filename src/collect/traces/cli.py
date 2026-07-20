@@ -46,8 +46,10 @@ def cmd_curate(args) -> int:
     # ein Unterordner ist automatisch ausgeschlossen).
     curated_dir = Path(settings.traces_dir) / "curated"
     curated_dir.mkdir(parents=True, exist_ok=True)
-    result = curate_interactive(traces, curated_dir / "curation.jsonl")
-    print(f"\nKuriert: {result['kept']} gut, {result['skipped']} übersprungen")
+    result = curate_interactive(traces, curated_dir / "curation.jsonl",
+                                use_prefilter=not args.no_prefilter)
+    print(f"\nKuriert: {result['kept']} gut, {result['skipped']} verworfen, "
+          f"{result['auto_rejected']} mechanisch vorab abgelehnt")
     if args.negatives:
         negs = build_negatives(traces)
         neg_path = curated_dir / f"{date.today().isoformat()}_synthetic.jsonl"
@@ -113,6 +115,8 @@ def main() -> int:
 
     pc = sub.add_parser("curate", help="Interaktive Kuration + Negativ-Synthese")
     pc.add_argument("--negatives", action="store_true", help="auch Negativbeispiele erzeugen")
+    pc.add_argument("--no-prefilter", action="store_true",
+                    help="mechanischen Vor-Filter aus (alle Traces manuell sichten)")
     pc.set_defaults(fn=cmd_curate)
 
     pm = sub.add_parser("migrate", help="Alt-traces.jsonl ins neue Schema überführen")

@@ -129,6 +129,46 @@ def build_negatives(traces: list[dict]) -> list[dict]:
     return out
 
 
+# ── Vor-Filter: mechanische Ablehnungsregeln (docs/traces_curation.md) ────
+# "auto"-Hälfte der Rubrik: entscheidbar ohne Urteil → lehnt vorab ab, damit
+# der Mensch nur die semantischen Grenzfälle (Antezedent, zerhackter Begriff)
+# sieht. Reine Reject-Regeln — Annehmen bleibt Urteilssache (Antezedent-Erhalt
+# lässt sich nicht mechanisch verifizieren).
+_LEADING_CONJ = re.compile(r"^(und|aber|oder|also)\b", re.IGNORECASE)
+_SIE = re.compile(r"\b(Sie|Ihnen|Ihre|Ihrer|Ihren|Ihrem|Ihres)\b")
+
+
+def _follow_up(trace: dict) -> str:
+    for m in trace.get("messages", []):
+        if m.get("role") == "user":
+            mm = re.search(r"FOLGEFRAGE:\s*(.+?)(?:\n|$)", m.get("content", ""))
+            if mm:
+                return mm.group(1).strip()
+    return ""
+
+
+def prefilter(trace: dict) -> Optional[str]:
+    """Mechanischer Ablehnungsgrund oder None (besteht → Mensch entscheidet).
+
+    Greift nur bei step_kind=rewrite; andere Kategorien werden durchgereicht."""
+    if trace.get("meta", {}).get("step_kind") != "rewrite":
+        return None
+    target = re.sub(r"<think>.*?</think>", "", _last_assistant(trace),
+                    flags=re.DOTALL).strip()
+    if not target:
+        return "leeres Target"
+    follow = _follow_up(trace)
+    if follow and target == follow:
+        return "kein Rewrite (Passthrough)"
+    if _LEADING_CONJ.match(target):
+        return "Konjunktions-Anfang (und/aber/oder/also)"
+    if _SIE.search(target):
+        return "Sie-Register"
+    if len(target.split()) < 4:
+        return "zu kurz (<4 Wörter)"
+    return None
+
+
 # ── Interaktive Kuration ─────────────────────────────────────────────────
 
 def _short(text: str, n: int = 300) -> str:
@@ -137,15 +177,33 @@ def _short(text: str, n: int = 300) -> str:
 
 
 def curate_interactive(traces: list[dict], curation_path: Path,
-                       input_fn=input, print_fn=print) -> dict:
+                       input_fn=input, print_fn=print,
+                       use_prefilter: bool = True) -> dict:
     """Zeigt jeden Trace, nimmt Verdikt (g/s/x/q), schreibt curated-Marker +
-    synthetisierten Think append-only nach curation_path. Gibt Zählung zurück."""
-    kept = skipped = 0
+    synthetisierten Think append-only nach curation_path. Gibt Zählung zurück.
+
+    use_prefilter=True: mechanisch ablehnbare Traces werden vorab aussortiert
+    (Regel-Verweis geloggt), nur die Urteils-Fälle werden vorgelegt."""
+    kept = skipped = auto = 0
+    auto_rejected: list[dict] = []
     curation_path.parent.mkdir(parents=True, exist_ok=True)
-    for i, t in enumerate(traces):
+    survivors = []
+    for t in traces:
+        reason = prefilter(t) if use_prefilter else None
+        if reason:
+            auto += 1
+            auto_rejected.append({"trace_id": t.get("meta", {}).get("trace_id"),
+                                  "reason": reason})
+            print_fn(f"  [auto-reject] {t.get('meta',{}).get('trace_id','?')}: {reason}")
+        else:
+            survivors.append(t)
+    if auto:
+        print_fn(f"\n{auto} mechanisch abgelehnt (Rubrik). "
+                 f"{len(survivors)} zur Sichtung:\n")
+    for i, t in enumerate(survivors):
         meta = t.get("meta", {})
         msgs = t.get("messages", [])
-        print_fn(f"\n[{i+1}/{len(traces)}] {meta.get('step_kind','?')} "
+        print_fn(f"\n[{i+1}/{len(survivors)}] {meta.get('step_kind','?')} "
                  f"(trace {meta.get('trace_id','?')})")
         for m in msgs[:-1]:
             print_fn(f"  {m.get('role'):9} {_short(m.get('content',''), 200)}")
@@ -165,4 +223,5 @@ def curate_interactive(traces: list[dict], curation_path: Path,
             kept += 1
         else:
             skipped += 1
-    return {"kept": kept, "skipped": skipped}
+    return {"kept": kept, "skipped": skipped,
+            "auto_rejected": auto, "auto_reasons": auto_rejected}
