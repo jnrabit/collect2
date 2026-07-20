@@ -169,16 +169,30 @@ def test_apply_think_inserts_block():
 
 
 def test_negative_unchanged_from_rewrite():
-    e = _entry_dict("rewrite")
-    e["messages"][1]["content"] = "Nutzer: alte Frage\nAssistent: alte Antwort\n\nund warum?"
+    e = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    e["messages"][1]["content"] = (
+        "Formuliere die FOLGEFRAGE um.\n\nGESPRÄCH:\n"
+        "Nutzer: Was macht Goertzel?\nAssistent: Er misst eine Frequenz.\n\n"
+        "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:")
     neg = curate.make_negative_unchanged(e)
     assert neg is not None
+    # Target ist UNCHANGED, und die eigenständige Frage steht als FOLGEFRAGE drin
     assert neg["messages"][-1]["content"] == "UNCHANGED"
+    assert "Wie robust ist der Goertzel-Algorithmus?" in neg["messages"][1]["content"]
+    assert "kein vorheriges Gespräch" in neg["messages"][1]["content"]
+    # der referenzielle Original-Wortlaut ist NICHT mehr die Folgefrage
+    assert "und wie robust ist das?" not in neg["messages"][1]["content"]
     assert neg["meta"]["synthetic"] is True
 
 
 def test_negative_unchanged_skips_non_rewrite():
     assert curate.make_negative_unchanged(_entry_dict("answer")) is None
+
+
+def test_negative_unchanged_skips_trivial_target():
+    # Zu kurzes/UNCHANGED-Target → kein brauchbares eigenständiges Beispiel
+    assert curate.make_negative_unchanged(_entry_dict("rewrite", target="UNCHANGED")) is None
+    assert curate.make_negative_unchanged(_entry_dict("rewrite", target="und dafür?")) is None
 
 
 def test_curate_interactive_writes_marker(tmp_path):

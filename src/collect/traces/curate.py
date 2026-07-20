@@ -54,23 +54,39 @@ def apply_think(trace: dict, think: str) -> dict:
 # ── Negativ-Synthese ─────────────────────────────────────────────────────
 
 def make_negative_unchanged(trace: dict) -> Optional[dict]:
-    """Aus einem rewrite-Trace: der Verlaufskontext wird entfernt → die Frage
-    ist jetzt eigenständig, das Target muss UNCHANGED sein (gegen T3-Kippen)."""
+    """Gegen T3-Kippen: die BEREITS eigenständige Frage → Target UNCHANGED.
+
+    Die eigenständige Version steckt schon im Trace — als Rewrite-Target. Wir
+    setzen sie ohne Verlauf als FOLGEFRAGE ein; ist sie eigenständig, MUSS der
+    Rewriter UNCHANGED liefern (nicht erneut umformen). Nur aus Traces mit
+    echtem, eigenständigem Rewrite ableitbar (Target ≠ referenzieller Original-
+    Query und kein Pronomen-Anfang)."""
     if trace.get("meta", {}).get("step_kind") != "rewrite":
         return None
+    standalone = _last_assistant(trace).strip()
+    if not standalone or standalone == "UNCHANGED" or len(standalone.split()) < 4:
+        return None  # kein brauchbarer eigenständiger Satz
+
     out = deepcopy(trace)
     for m in out["messages"]:
         if m.get("role") == "user":
-            # Verlaufszeilen (Nutzer:/Assistent:) raus, nur die Frage lassen
-            c = re.sub(r"(?im)^(nutzer|assistent|user|verlauf|bisheriges).*$", "",
-                       m.get("content", ""))
-            m["content"] = re.sub(r"\n{2,}", "\n", c).strip()
+            prefix = m.get("content", "").split("GESPRÄCH:")[0].rstrip()
+            m["content"] = (f"{prefix}\n\nGESPRÄCH:\n(kein vorheriges Gespräch)\n\n"
+                            f"FOLGEFRAGE: {standalone}\n\nEigenständige Frage:")
+            break
     for m in reversed(out["messages"]):
         if m.get("role") == "assistant":
             m["content"] = "UNCHANGED"
             m.pop("tool_calls", None)
             break
     return _finalize_negative(out, "t3_unchanged")
+
+
+def _last_assistant(trace: dict) -> str:
+    for m in reversed(trace.get("messages", [])):
+        if m.get("role") == "assistant":
+            return m.get("content", "") or ""
+    return ""
 
 
 def make_negative_answer_no_call(trace: dict) -> Optional[dict]:
