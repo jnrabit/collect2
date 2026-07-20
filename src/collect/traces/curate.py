@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from copy import deepcopy
@@ -21,22 +22,56 @@ from collect.traces.schema import make_trace_id
 
 # ── Think-Synthese ───────────────────────────────────────────────────────
 
-_THINK_BY_KIND = {
-    "rewrite": "Folgefrage referenziell auf den Verlauf → in eine "
-               "eigenständige Suchanfrage umformen.",
-    "answer": "Quellen gesammelt → finale Antwort daraus formulieren.",
-    "no_op": "Frage bereits eigenständig bzw. keine Aktion nötig.",
+# Mehrere Formulierungen pro step_kind: ein WORTGLEICHER Think in jedem
+# Beispiel macht den Großteil der Target-Tokens trivial vorhersagbar — die Loss
+# fällt dann, ohne dass die Fähigkeit besser wird (im 3B-Mechanik-Lauf war die
+# Loss in Epoche 1 bei 0,0001). Die Auswahl bleibt deterministisch: stabiler
+# Hash über die trace_id, kein Zufall, kein LLM.
+_THINK_VARIANTS = {
+    "rewrite": [
+        "Folgefrage referenziell auf den Verlauf → in eine eigenständige "
+        "Suchanfrage umformen.",
+        "Die Frage zeigt auf den Verlauf zurück; das Thema einsetzen, damit "
+        "sie eigenständige Bedeutung hat.",
+        "Ohne den Verlauf ist die Frage unverständlich → Antezedent auflösen "
+        "und eigenständige Suchanfrage bilden.",
+        "Bezug aus dem Gespräch übernehmen und als eigenständige Frage "
+        "ausformulieren.",
+        "Referenz auflösen: das gemeinte Thema benennen, Rest der Frage "
+        "erhalten — Ergebnis muss eigenständige Suchanfrage sein.",
+    ],
+    "answer": [
+        "Quellen gesammelt → finale Antwort daraus formulieren.",
+        "Belege liegen vor; daraus eine knappe Antwort schreiben.",
+        "Genug Material zusammen — Antwort aus den Fundstellen ableiten.",
+    ],
+    "no_op": [
+        "Frage bereits eigenständig bzw. keine Aktion nötig.",
+        "Nichts zu tun: die Anfrage steht schon für sich.",
+    ],
 }
 
 
-def synth_think(step_kind: str, messages: Optional[list[dict]] = None) -> str:
-    """Deterministischer Think-Vorschlag (1–2 Sätze) aus dem step_kind."""
+def synth_think(step_kind: str, messages: Optional[list[dict]] = None,
+                trace_id: str = "") -> str:
+    """Deterministischer Think-Vorschlag (1–2 Sätze) aus step_kind + trace_id.
+
+    Gleiche trace_id ⇒ gleicher Think (reproduzierbar), verschiedene Traces ⇒
+    unterschiedliche Formulierung (kein auswendig lernbares Präfix)."""
     if step_kind == "tool_call" and messages:
         for m in reversed(messages):
             for tc in m.get("tool_calls", []) or []:
                 name = tc.get("function", {}).get("name", "?")
                 return f"Werkzeug nötig, um {name} auszuführen."
-    return _THINK_BY_KIND.get(step_kind, "Nächsten Schritt bestimmen.")
+    variants = _THINK_VARIANTS.get(step_kind)
+    if not variants:
+        return "Nächsten Schritt bestimmen."
+    return variants[_stable_index(trace_id, len(variants))]
+
+
+def _stable_index(key: str, n: int) -> int:
+    """Stabil über Prozess-Neustarts hinweg (hash() ist es nicht)."""
+    return int(hashlib.sha1(key.encode("utf-8")).hexdigest(), 16) % n
 
 
 def apply_think(trace: dict, think: str) -> dict:
@@ -209,7 +244,7 @@ def curate_interactive(traces: list[dict], curation_path: Path,
             print_fn(f"  {m.get('role'):9} {_short(m.get('content',''), 200)}")
         tgt = msgs[-1] if msgs else {}
         print_fn(f"  → TARGET   {_short(tgt.get('content',''), 500)}")
-        think = synth_think(meta.get("step_kind", ""), msgs)
+        think = synth_think(meta.get("step_kind", ""), msgs, meta.get("trace_id", ""))
         print_fn(f"  ~ think-Vorschlag: {think}")
         verdict = (input_fn("  [g]ut / [s]chlecht / [x] skip / [q]uit: ") or "").strip().lower()
         if verdict == "q":
@@ -225,3 +260,78 @@ def curate_interactive(traces: list[dict], curation_path: Path,
             skipped += 1
     return {"kept": kept, "skipped": skipped,
             "auto_rejected": auto, "auto_reasons": auto_rejected}
+
+
+# ── Trainingssatz bauen (reproduzierbar) ─────────────────────────────────
+
+def load_curated_ids(curation_path: Path) -> set[str]:
+    """trace_ids mit positivem Verdikt aus der append-only Kurations-JSONL.
+    Späterer Eintrag gewinnt (Override durch erneutes Kurieren)."""
+    verdicts: dict[str, bool] = {}
+    if not curation_path.exists():
+        return set()
+    for line in curation_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        if d.get("trace_id"):
+            verdicts[d["trace_id"]] = bool(d.get("curated"))
+    return {tid for tid, ok in verdicts.items() if ok}
+
+
+def build_training_set(traces: list[dict], curated_ids: set[str],
+                       eval_n: int = 10,
+                       negative_ratio: float = 0.3) -> dict:
+    """Baut Trainings- und Eval-Satz aus den kuratierten Positiven.
+
+    - Reihenfolge deterministisch über trace_id (kein Zufall ⇒ derselbe
+      Trace-Bestand ergibt denselben Split).
+    - Eval-Split per Stride, damit die zurückgehaltenen Beispiele thematisch
+      gestreut sind statt „die letzten zehn".
+    - Negative NUR aus Train-Positiven — ein Negativ aus einem Eval-Trace
+      würde dessen Inhalt ins Training lecken.
+    - Think: variiert pro Trace im Train-Satz; im Eval-Satz KEIN Think, dort
+      wird gegen die reine Zielfrage verglichen.
+    """
+    positives = sorted((t for t in traces
+                        if t.get("meta", {}).get("trace_id") in curated_ids),
+                       key=lambda t: t["meta"]["trace_id"])
+    eval_n = max(0, min(eval_n, len(positives) // 2))
+    eval_idx: set[int] = set()
+    if eval_n:
+        stride = len(positives) / eval_n
+        eval_idx = {min(int(i * stride), len(positives) - 1) for i in range(eval_n)}
+    eval_set = [positives[i] for i in sorted(eval_idx)]
+    train_pos = [t for i, t in enumerate(positives) if i not in eval_idx]
+
+    negatives = build_negatives(train_pos)
+    if negative_ratio > 0 and train_pos:
+        cap = int(len(train_pos) * negative_ratio / (1 - negative_ratio)) or 1
+    else:
+        cap = 0
+    if len(negatives) > cap:  # per Stride ausdünnen statt vorne abschneiden
+        step = len(negatives) / cap if cap else 0
+        negatives = [negatives[min(int(i * step), len(negatives) - 1)]
+                     for i in range(cap)] if cap else []
+
+    train = [_with_think(t) for t in train_pos + negatives]
+    return {"train": train, "eval": [_strip_think(t) for t in eval_set],
+            "n_positive": len(train_pos), "n_negative": len(negatives)}
+
+
+def _with_think(trace: dict) -> dict:
+    meta = trace.get("meta", {})
+    return apply_think(trace, synth_think(meta.get("step_kind", ""),
+                                          trace.get("messages"),
+                                          meta.get("trace_id", "")))
+
+
+def _strip_think(trace: dict) -> dict:
+    out = deepcopy(trace)
+    for m in reversed(out.get("messages", [])):
+        if m.get("role") == "assistant":
+            m["content"] = re.sub(r"<think>.*?</think>\s*", "",
+                                  m.get("content", "") or "",
+                                  flags=re.DOTALL).strip()
+            break
+    return out

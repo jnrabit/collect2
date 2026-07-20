@@ -173,6 +173,15 @@ def test_synth_think_by_kind():
     assert "Antwort" in curate.synth_think("answer")
 
 
+def test_synth_think_varies_by_trace_id():
+    """Wortgleicher Think in jedem Beispiel macht das Target trivial lernbar."""
+    thinks = {curate.synth_think("rewrite", None, f"t{i}") for i in range(30)}
+    assert len(thinks) > 1
+    # aber reproduzierbar: gleiche id ⇒ gleicher Think
+    assert curate.synth_think("rewrite", None, "t7") == \
+        curate.synth_think("rewrite", None, "t7")
+
+
 def test_apply_think_inserts_block():
     e = _entry_dict()
     out = curate.apply_think(e, "Kurzer Grund.")
@@ -246,6 +255,57 @@ def test_curate_prefilter_auto_rejects(tmp_path):
         [good, bad], tmp_path / "curation.jsonl",
         input_fn=lambda _: next(verdicts, "q"), print_fn=lambda *a: None)
     assert result["auto_rejected"] == 1 and result["kept"] == 1
+
+
+def _rewrite_trace(i: int) -> dict:
+    e = _entry_dict("rewrite", target=f"Wie funktioniert Verfahren Nummer {i} genau?")
+    e["messages"][1]["content"] = (
+        f"GESPRÄCH:\nNutzer: Was ist Verfahren {i}?\nAssistent: Ein Verfahren.\n\n"
+        f"FOLGEFRAGE: und wie genau?\n\nEigenständige Frage:")
+    e["meta"]["trace_id"] = f"tr{i:03d}"
+    return e
+
+
+def test_load_curated_ids_later_verdict_wins(tmp_path):
+    p = tmp_path / "curation.jsonl"
+    p.write_text('{"trace_id":"a","curated":true}\n'
+                 '{"trace_id":"b","curated":true}\n'
+                 '{"trace_id":"a","curated":false}\n', encoding="utf-8")
+    assert curate.load_curated_ids(p) == {"b"}
+
+
+def test_build_training_set_holds_out_eval():
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    res = curate.build_training_set(traces, ids, eval_n=5, negative_ratio=0.0)
+    assert len(res["eval"]) == 5 and res["n_positive"] == 15
+    train_ids = {t["meta"]["trace_id"] for t in res["train"]}
+    eval_ids = {t["meta"]["trace_id"] for t in res["eval"]}
+    assert not (train_ids & eval_ids)
+    # Eval ohne Think (dort wird gegen die reine Zielfrage verglichen)
+    assert all("<think>" not in t["messages"][-1]["content"] for t in res["eval"])
+    assert all("<think>" in t["messages"][-1]["content"] for t in res["train"])
+
+
+def test_build_training_set_no_negative_leaks_eval():
+    """Ein Negativ aus einem Eval-Trace traegt dessen Zielfrage ins Training."""
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    res = curate.build_training_set(traces, ids, eval_n=5, negative_ratio=0.3)
+    assert res["n_negative"] > 0
+    origins = {t["meta"].get("derived_from") for t in res["train"]
+               if t["meta"].get("synthetic")}
+    eval_ids = {t["meta"]["trace_id"] for t in res["eval"]}
+    assert not (origins & eval_ids)
+
+
+def test_build_training_set_deterministic():
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    a = curate.build_training_set(traces, ids, eval_n=5)
+    b = curate.build_training_set(list(reversed(traces)), ids, eval_n=5)
+    assert [t["meta"]["trace_id"] for t in a["eval"]] == \
+        [t["meta"]["trace_id"] for t in b["eval"]]
 
 
 def test_curate_interactive_writes_marker(tmp_path):

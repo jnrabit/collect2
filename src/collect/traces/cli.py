@@ -60,6 +60,29 @@ def cmd_curate(args) -> int:
     return 0
 
 
+def cmd_build(args) -> int:
+    """Trainings-/Eval-Satz aus Traces + Kurations-Verdikten neu bauen."""
+    from collect.traces.curate import build_training_set, load_curated_ids
+    traces = get_collector().load_all()
+    curated_dir = Path(settings.traces_dir) / "curated"
+    curated_ids = load_curated_ids(curated_dir / "curation.jsonl")
+    if not curated_ids:
+        print(f"Keine Kurations-Verdikte in {curated_dir/'curation.jsonl'} — "
+              f"erst 'collect-traces curate' laufen lassen.")
+        return 1
+    res = build_training_set(traces, curated_ids, eval_n=args.eval_n,
+                             negative_ratio=args.negative_ratio)
+    curated_dir.mkdir(parents=True, exist_ok=True)
+    for name, rows in (("training_set", res["train"]), ("eval_set", res["eval"])):
+        path = curated_dir / f"{name}.jsonl"
+        with open(path, "w", encoding="utf-8") as f:  # neu bauen, nicht anhaengen
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print(f"{name}: {len(rows)} → {path}")
+    print(f"  Train: {res['n_positive']} positiv + {res['n_negative']} negativ")
+    return 0
+
+
 def cmd_migrate(args) -> int:
     """Alt-Traces (flaches data/traces.jsonl) ins neue Schema + rotierende Dir."""
     src = Path(args.source)
@@ -118,6 +141,13 @@ def main() -> int:
     pc.add_argument("--no-prefilter", action="store_true",
                     help="mechanischen Vor-Filter aus (alle Traces manuell sichten)")
     pc.set_defaults(fn=cmd_curate)
+
+    pb = sub.add_parser("build", help="Trainings-/Eval-Satz reproduzierbar bauen")
+    pb.add_argument("--eval-n", type=int, default=10,
+                    help="zurueckgehaltene Eval-Beispiele (Stride-gestreut)")
+    pb.add_argument("--negative-ratio", type=float, default=0.3,
+                    help="Anteil Negative am Trainingssatz (0 = keine)")
+    pb.set_defaults(fn=cmd_build)
 
     pm = sub.add_parser("migrate", help="Alt-traces.jsonl ins neue Schema überführen")
     pm.add_argument("--source", default=str(Path.home() / "collect2" / "data" / "traces.jsonl"))

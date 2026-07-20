@@ -51,9 +51,25 @@ Diese 5 sind die Kalibrier-Beispiele der Regeln — bei Unsicherheit hier abglei
 
 ## Think-Synthese (deterministisch, kein LLM)
 
-Pro `step_kind` ein fester deutscher 1-Satz-Think (≤80 Token), z. B. rewrite →
-„Folgefrage referenziell auf den Verlauf → in eine eigenständige Suchanfrage
-umformen." Reproduzierbar, keine eingefrorenen Modell-Monologe.
+Pro `step_kind` **mehrere** deutsche 1-Satz-Thinks (≤80 Token); ausgewählt per
+stabilem Hash über die `trace_id`. Also reproduzierbar (gleicher Trace ⇒
+gleicher Think) *und* variiert über den Satz hinweg.
+
+Warum variiert: mit einem wortgleichen Think in jedem Beispiel ist der Großteil
+der Target-Tokens ein konstantes Präfix. Die Loss fällt dann, ohne dass die
+Fähigkeit besser wird — im 3B-Mechanik-Lauf (2026-07-20) lag sie schon in
+Epoche 1 bei 0,0001, während der Adapter die Aufgabe faktisch verschlechterte.
+
+## Trainings-/Eval-Satz bauen
+
+`collect-traces build --eval-n N` baut beide Sätze **neu** aus Traces +
+`curation.jsonl` (append-only; späteres Verdikt überstimmt früheres). Keine
+Handarbeit, kein Ad-hoc-Skript — derselbe Trace-Bestand ergibt denselben Satz.
+
+- **Eval-Split per Stride**, nicht „die letzten N" — thematisch gestreut.
+- **Negative nur aus Train-Positiven.** Ein Negativ aus einem Eval-Trace trägt
+  dessen Zielfrage ins Training (Leck); dagegen gibt es einen Test.
+- **Eval ohne `<think>`**: dort wird gegen die reine Zielfrage verglichen.
 
 ## Negativ-Synthese
 
