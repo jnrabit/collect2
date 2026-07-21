@@ -125,7 +125,67 @@ BATCH3: list[tuple[str, str]] = [
     ("What does a patent actually protect?", "how long does it last?"),
 ]
 
-BATCHES = {"2": BATCH2, "3": BATCH3, "all": BATCH2 + BATCH3}
+# Charge 4 — gezielt auf die im harten Eval gemessenen Schwaechen:
+# Distraktor 4/6, tiefer Antezedent 3/4. Grund laut Datenlage: KEINER der 100
+# Traces hatte eine Historie mit zwei Entitaeten, fast alle nur einen Turn —
+# das Modell hat die Konstruktion, an der es scheitert, nie gesehen.
+# Entitaeten bewusst disjunkt zu eval_hard.jsonl UND eval_hard2.jsonl.
+#
+# Drittes Element (optional) = Zwischenfrage ⇒ ZWEI-Turn-Historie, der Bezug
+# der Folgefrage liegt dann im ERSTEN Turn.
+BATCH4: list[tuple] = [
+    # A · Distraktor-Historien (zwei Entitaeten, eine gemeint)
+    ("Worin unterscheiden sich Kafka und RabbitMQ?", "wie lange haelt das die Nachrichten?"),
+    ("Was unterscheidet MySQL von MariaDB?", "wer entwickelt das heute?"),
+    ("Wie unterscheiden sich TLS und SSH?", "wie laeuft da der Schluesselaustausch?"),
+    ("Was ist der Unterschied zwischen Cassandra und MongoDB?", "wie modelliert man da die Daten?"),
+    ("Worin unterscheiden sich Webpack und Vite?", "warum ist das im Entwicklungsmodus schneller?"),
+    ("Was unterscheidet eine Aktie von einer Anleihe?", "wie wird das verzinst?"),
+    ("Wie unterscheiden sich Miete und Pacht?", "was darf man da mit den Ertraegen machen?"),
+    ("Was ist der Unterschied zwischen Beton und Zement?", "wie lange braucht das zum Aushaerten?"),
+    ("Worin unterscheiden sich Diesel- und Ottomotor?", "wie zuendet das Gemisch da?"),
+    ("Was unterscheidet ein Enzym von einem Hormon?", "wo wird das gebildet?"),
+    ("Wie unterscheiden sich Viren und Bakterien?", "wirkt ein Antibiotikum dagegen?"),
+    ("Was ist der Unterschied zwischen Zoll und Einfuhrsteuer?", "wer zieht das ein?"),
+    ("Worin unterscheiden sich Hartholz und Weichholz?", "wofuer nimmt man das im Moebelbau?"),
+    ("Was unterscheidet Gleichstrom von Wechselstrom?", "warum wird das ueber weite Strecken genutzt?"),
+    # B · Zwei-Turn-Historien, Bezug liegt im ERSTEN Turn
+    ("Wie funktioniert ein Kompressor in der Waermepumpe?",
+     "und wie robust ist der im Dauerbetrieb?", "Wie laut ist das?"),
+    ("Was macht ein Schema-Migrationswerkzeug?",
+     "und wie macht man das rueckgaengig?", "Wie oft laeuft das?"),
+    ("Wie arbeitet ein Spamfilter mit Wortlisten?",
+     "und wie umgeht man den?", "Wie gut trifft das?"),
+    ("Was ist eine Grunddienstbarkeit?",
+     "wie wird die eingetragen?", "Wer profitiert davon?"),
+    ("Wie funktioniert ein Segelboot am Wind?",
+     "und wie steil geht das?", "Warum kippt es nicht um?"),
+    ("Was macht ein Schrittmotor anders als ein normaler Motor?",
+     "wie genau positioniert der?", "Wo wird das eingesetzt?"),
+    ("Wie funktioniert die Verjaehrungshemmung?",
+     "wodurch wird die ausgeloest?", "Wie lange dauert das?"),
+    ("Was ist ein Kalman-Filter?",
+     "wie schaetzt der den naechsten Zustand?", "Wo braucht man das?"),
+    # C · Artikel-Demonstrative in natuerlicher Form (erst durchs neue Gate moeglich)
+    ("Was macht ein Reverse-DNS-Eintrag?", "wie erkennt man den?"),
+    ("Was ist eine Patronatserklaerung?", "wann ist die bindend?"),
+    ("Wie funktioniert ein Sperrminoritaets-Anteil?", "ab welchem Prozentsatz greift der?"),
+    ("Was macht ein Notaranderkonto?", "wer verwaltet das treuhaenderisch?"),
+    ("Wie funktioniert eine Rueckstellung in der Bilanz?", "wann wird die aufgeloest?"),
+    ("Was ist ein Bebauungsplan?", "wer beschliesst den?"),
+    ("Wie arbeitet ein Fliehkraftregler?", "wie schnell reagiert der?"),
+    ("Was macht eine Ausgleichsmasse beim Estrich?", "wie dick traegt man die auf?"),
+    ("Wie funktioniert ein Rueckschlagventil?", "in welche Richtung sperrt das?"),
+    ("Was ist eine Sicherungsuebereignung?", "wann faellt die weg?"),
+    # D · Englisch mit Distraktor
+    ("What is the difference between a mutex and a spinlock?", "when does that waste CPU time?"),
+    ("How do JWT and session cookies differ?", "where is that stored?"),
+    ("What separates a container from a virtual machine?", "how fast does that boot?"),
+    ("How do row stores and column stores differ?", "which queries is that good for?"),
+]
+
+BATCHES = {"2": BATCH2, "3": BATCH3, "4": BATCH4,
+           "all": BATCH2 + BATCH3 + [(p[0], p[1]) for p in BATCH4]}
 
 
 def answer(question: str, model: str) -> str:
@@ -151,7 +211,7 @@ def main() -> int:
         return 1
 
     pairs = BATCHES[args.batch]
-    gated = [f for _, f in pairs if not is_referential(f)]
+    gated = [p[1] for p in pairs if not is_referential(p[1])]
     print(f"Charge {args.batch}: {len(pairs)} Paare, "
           f"{len(gated)} davon vom Gate abgewiesen:")
     for f in gated:
@@ -161,7 +221,9 @@ def main() -> int:
 
     ok = fail = skipped = 0
     t0 = time.time()
-    for i, (base, follow) in enumerate(pairs):
+    for i, pair in enumerate(pairs):
+        base, follow = pair[0], pair[1]
+        mid = pair[2] if len(pair) > 2 else None
         if i < args.start:
             continue
         if not is_referential(follow):
@@ -169,6 +231,11 @@ def main() -> int:
             continue
         try:
             hist = [{"q": base, "a": answer(base, args.model)}]
+            if mid:
+                # Zweiter Turn: schiebt den Antezedenten der Folgefrage einen
+                # Turn nach hinten. Der Rewriter sieht history[-2:], der Bezug
+                # liegt also im ersten der beiden sichtbaren Turns.
+                hist.append({"q": mid, "a": answer(mid, args.model)})
             res = rewrite(follow, hist)
         except Exception as e:  # noqa: BLE001 — ein Ausfall darf die Charge nicht killen
             print(f"[{i:2d}] FEHLER {follow!r}: {e}", flush=True)

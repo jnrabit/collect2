@@ -58,6 +58,23 @@ def test_article_demonstratives_are_referential(query):
 
 
 @pytest.mark.parametrize("query", [
+    "wirkt ein Antibiotikum dagegen?",
+    "was entsteht dadurch?",
+    "was steckt darin?",
+    "was faellt darunter?",
+    "was war davor?",
+    "was kommt danach?",
+    "was verbirgt sich dahinter?",
+    "was liegt daneben?",
+    "was macht man darum?",
+    "was folgt daraus?",
+])
+def test_da_compounds_complete(query):
+    """da-Komposita sind ausnahmslos anaphorisch — Liste muss vollstaendig sein."""
+    assert is_referential(query) is True
+
+
+@pytest.mark.parametrize("query", [
     "Wie funktioniert der TLS Handshake im Detail?",
     "Was macht der Goertzel-Algorithmus?",
     "Wie funktioniert die Photosynthese?",

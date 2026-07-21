@@ -111,6 +111,38 @@ Abschreibung" — vorangestelltes Adjektiv täuscht die Heuristik). Das ist die
 günstige Fehlerrichtung, weil der Rewrite additiv ist (die Originalfrage
 läuft per RRF weiter mit).
 
+## Charge 4 (2026-07-21) — gezielt auf die gemessenen Schwächen
+
+Nicht breiter, sondern **schmaler**: der harte Eval zeigte Distraktor 4/6 und
+tiefen Antezedenten 3/4. Laut Datenlage kein Wunder — von 100 Traces hatte
+**keiner** eine Historie mit zwei Entitäten, fast alle nur einen Turn. Das
+Modell hatte die Konstruktion, an der es scheitert, nie gesehen.
+
+36 Paare: 14 Distraktor-Historien, 8 Zwei-Turn-Historien (Bezug im ersten
+Turn), 10 Artikel-Demonstrative in natürlicher Form (erst durchs neue Gate
+sammelbar), 4 englische mit Distraktor. Entitäten disjunkt zu beiden
+Eval-Sätzen.
+
+Von 35 Urteilsfällen **15 angenommen, 20 abgelehnt** — die härteste Quote
+bisher, und zwar aus einem Grund, der den Aufwand rechtfertigt:
+
+**Neue Ablehnungsklasse „Hedging".** Bei Distraktor-Historien nennt
+qwen2.5:3b überwiegend *beide* Entitäten statt sich zu entscheiden: „Wie
+lange speichert Kafka **und RabbitMQ** ihre Nachrichten?", „Wie werden Aktien
+**und Anleihen** verzinst?". 8 der 20 Ablehnungen sind dieser Fall. Genau das
+Verhalten fällt im harten Eval durch `must_not_include` — deshalb darf es
+nicht ins Training.
+
+Ausnahme: bei **vergleichenden** Folgefragen („when does that waste CPU
+time?" nach mutex/spinlock) ist die Nennung des Vergleichspartners korrekt,
+nicht Hedging. Dieselbe Unterscheidung wie bei `dist-02` im harten Eval.
+
+Stand: **136 Rewrite-Traces, 71 kuratierte Positive**, Trainingssatz 56.
+
+| Klasse | Regel | Prüfung |
+|---|---|---|
+| Hedging | nennt beide Entitäten der Historie, obwohl eine gemeint ist | Urteil |
+
 ## Think-Synthese (deterministisch, kein LLM)
 
 Pro `step_kind` **mehrere** deutsche 1-Satz-Thinks (≤80 Token); ausgewählt per

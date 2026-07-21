@@ -29,9 +29,13 @@ MAX_CONTENT_TERMS = settings.rewrite_max_content_terms
 # Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Eindeutig
 # rückverweisende Formen; die mehrdeutigen Artikel-Demonstrative stehen
 # separat in _DEMONSTRATIVE (siehe dort).
+# da-Komposita sind ausnahmslos anaphorisch ("dagegen" = gegen DAS eben
+# Genannte) — die Liste deshalb vollstaendig halten, nicht stichprobenartig.
 _PRONOUNS = frozenset(
-    "das es dies dieser diese dieses damit dafür dafuer davon dabei dazu "
-    "daran darauf darüber darueber deshalb deswegen er ihn ihm denen da dort "
+    "das es dies dieser diese dieses er ihn ihm denen da dort "
+    "damit dafür dafuer davon dabei dazu daran darauf darüber darueber "
+    "dagegen dadurch darin darunter davor danach dahinter daneben darum "
+    "daraus dazwischen deshalb deswegen "
     "it that this these those they them its".split())
 
 # Artikel-Demonstrative: "der/die/den/…" zeigen zurück, WENN kein Nomen folgt.
