@@ -26,12 +26,27 @@ logger = logging.getLogger(__name__)
 # (COLLECT_REWRITE_MAX_CONTENT_TERMS); Alias bindet beim Start.
 MAX_CONTENT_TERMS = settings.rewrite_max_content_terms
 
-# Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Bewusst OHNE
-# Artikel (der/die/das als Artikel) — nur eindeutig rückverweisende Formen.
+# Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Eindeutig
+# rückverweisende Formen; die mehrdeutigen Artikel-Demonstrative stehen
+# separat in _DEMONSTRATIVE (siehe dort).
 _PRONOUNS = frozenset(
     "das es dies dieser diese dieses damit dafür dafuer davon dabei dazu "
-    "daran darauf darüber darueber deshalb deswegen er ihn ihm "
+    "daran darauf darüber darueber deshalb deswegen er ihn ihm denen da dort "
     "it that this these those they them its".split())
+
+# Artikel-Demonstrative: "der/die/den/…" zeigen zurück, WENN kein Nomen folgt.
+#   "wie erkennt man den?"        → Demonstrativ, braucht den Vorkontext
+#   "wie funktioniert der Cache?" → Artikel, Frage steht für sich
+# Unterscheidung an der Großschreibung des Folgeworts (deutsche Nomen).
+#
+# Heuristik, kein Parser: ein vorangestelltes Adjektiv täuscht sie ("die
+# degressive Abschreibung" gilt als Demonstrativ). Das ist die guenstige
+# Fehlerrichtung — der Rewrite ist additiv (die Originalfrage läuft per RRF
+# weiter mit), ein ueberfluessiger Rewrite kostet also wenig, eine uebersehene
+# Folgefrage dagegen den Treffer. Gemessen am gesammelten Korpus (2026-07-21):
+# 98 eigenstaendige Fragen, davon genau EINE neu falsch-positiv; auf der
+# Gegenseite werden Faelle wie "wie erkennt man den?" nicht mehr uebersehen.
+_DEMONSTRATIVE = re.compile(r"\b[Dd](?:er|ie|en|em|es|eren|essen)\b(?!\s+[A-ZÄÖÜ])")
 
 # Konjunktions-/Anschluss-Anfänge, die einen vorherigen Turn voraussetzen
 _LEAD_IN = re.compile(
@@ -51,7 +66,9 @@ def is_referential(query: str) -> bool:
     if len(query_terms(q)) > settings.rewrite_max_content_terms:
         return False
     words = set(re.findall(r"[a-zäöüß]+", q.lower()))
-    return bool(words & _PRONOUNS) or bool(_LEAD_IN.match(q))
+    return (bool(words & _PRONOUNS)
+            or bool(_LEAD_IN.match(q))
+            or bool(_DEMONSTRATIVE.search(q)))
 
 
 def _clean(raw: str, original: str) -> str:

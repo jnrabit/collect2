@@ -92,15 +92,24 @@ Häufigste Ablehnungsklasse war **Bedeutung verdreht** (5×), z. B.
 **geöffnet**?" (Gegenteil) und „wie erkennt man das?" → „Wie kann man einen
 Deadlock **ausnutzen**?".
 
-## Grenze des Gates (nicht Kuration, aber hier relevant)
+## Grenze des Gates — behoben (2026-07-21)
 
-12 der 47 Folgefragen kamen **gar nicht erst zum Rewriter**:
-`is_referential()` prüft gegen eine feste Pronomenliste, und Artikel-
-Demonstrativa fehlen darin. „wie erkennt man **den**?", „wann ist **die**
-bindend?", „ab welchem Prozentsatz greift **der**?" gelten als
-nicht-referenziell — im Betrieb gehen solche Folgefragen also ungerewritten
-ins Retrieval. Für die Sammlung wurden sie auf „das" umformuliert; die Lücke
-im Gate besteht weiter und ist unabhängig vom Finetune zu beheben.
+12 der 47 Folgefragen kamen zunächst **gar nicht erst zum Rewriter**:
+`is_referential()` prüfte gegen eine feste Pronomenliste, Artikel-
+Demonstrativa fehlten darin. „wie erkennt man **den**?", „wann ist **die**
+bindend?" galten als nicht-referenziell — solche Folgefragen gingen im
+Betrieb ungerewritten ins Retrieval.
+
+Behoben über `_DEMONSTRATIVE`: „der/die/den/…" zählt als Rückverweis, wenn
+**kein großgeschriebenes Nomen folgt** („wie erkennt man den?" ja, „wie
+funktioniert der Cache?" nein). Ergänzt wurden ausserdem „da", „dort",
+„denen".
+
+Kosten gemessen statt geschätzt: auf den 98 eigenständigen Basisfragen des
+Korpus erzeugt die Regel **genau einen** neuen Fehlalarm („die *degressive*
+Abschreibung" — vorangestelltes Adjektiv täuscht die Heuristik). Das ist die
+günstige Fehlerrichtung, weil der Rewrite additiv ist (die Originalfrage
+läuft per RRF weiter mit).
 
 ## Think-Synthese (deterministisch, kein LLM)
 
