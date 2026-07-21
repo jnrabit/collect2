@@ -76,6 +76,32 @@ halluzinierte Aufzählung („Btrfs, XFS **und die Linux-Nutzer**").
 Rubrik dazu keine Regel hat. Wenn das Modell später inkonsistent
 groß-/kleinschreibt, ist das der erste Verdächtige.
 
+## Charge 3 (2026-07-21) — Zielmarke 100 erreicht
+
+47 neue Paare, bewusst breiter als 1+2 (die waren fast reines Infra/ML):
+Handwerk, Biologie, Recht, Finanzen, Geschichte, dazu Englisch. Von 42
+Urteilsfällen **24 angenommen, 18 abgelehnt** — deutlich härtere Quote als
+Charge 2 (15/11). Grund: außerhalb der Technikdomäne bricht qwen2.5:3b
+häufiger sprachlich ein („Wo sind Mitochondrien in der Zelle herkommend?",
+„Warum hat Chlorophyll im Grünfarben?", „Gebrauchstuffsamenstellungen").
+
+Stand: **100 Rewrite-Traces, 56 kuratierte Positive.**
+
+Häufigste Ablehnungsklasse war **Bedeutung verdreht** (5×), z. B.
+„wann schließt er wieder?" → „Wann wird ein Circuit Breaker wieder
+**geöffnet**?" (Gegenteil) und „wie erkennt man das?" → „Wie kann man einen
+Deadlock **ausnutzen**?".
+
+## Grenze des Gates (nicht Kuration, aber hier relevant)
+
+12 der 47 Folgefragen kamen **gar nicht erst zum Rewriter**:
+`is_referential()` prüft gegen eine feste Pronomenliste, und Artikel-
+Demonstrativa fehlen darin. „wie erkennt man **den**?", „wann ist **die**
+bindend?", „ab welchem Prozentsatz greift **der**?" gelten als
+nicht-referenziell — im Betrieb gehen solche Folgefragen also ungerewritten
+ins Retrieval. Für die Sammlung wurden sie auf „das" umformuliert; die Lücke
+im Gate besteht weiter und ist unabhängig vom Finetune zu beheben.
+
 ## Think-Synthese (deterministisch, kein LLM)
 
 Pro `step_kind` **mehrere** deutsche 1-Satz-Thinks (≤80 Token); ausgewählt per
