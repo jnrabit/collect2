@@ -203,6 +203,23 @@ class CollectSettings(BaseSettings):
                     "Erfordert ein Tool-Calling-fähiges Modell in Ollama "
                     "(/api/chat mit tools). Gehört zum K4N0N3-Serving-Auftrag.")
 
+    # ── K4N0N3-Integration ──────────────────────────────────────────────
+    k4n0n3_enabled: bool = Field(
+        default=False,
+        description="K4N0N3-Adapter als generate_fn nutzen. Konfiguriert "
+                    "Stop-Tokens und Parameter für Qwythos. Erfordert das "
+                    "Qwythos-Modell in Ollama. Bei true wird k4n0n3.generate "
+                    "statt ollama.generate in alle Agenten injiziert.")
+    k4n0n3_model: str = Field(
+        default="pdurlej/qwythos-9b-claude-mythos-5-1m",
+        description="Modell-Name in Ollama für K4N0N3-Adapter. "
+                    "Default: Qwythos-9B mit Claude-Mythos-Finetune.")
+    k4n0n3_rewrite_model: str = Field(
+        default="",
+        description="Modell für Query-Rewrite via K4N0N3-Adapter. "
+                    "Leer = k4n0n3_model. Ein separates kleineres Modell "
+                    "kann den Qwythos-Adapter für Rewrite-Aufgaben nutzen.")
+
     # ── Trace-Pipeline (Trainingsdaten-Sammlung, CPU-only) ───────────────
     traces_enabled: bool = Field(
         default=True,

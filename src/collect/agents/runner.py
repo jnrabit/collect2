@@ -19,7 +19,15 @@ logger = logging.getLogger(__name__)
 
 
 def build_agents(bus, generate_fn=None):
-    """Konstruiert alle Kern-Agenten (Ollama-generate injizierbar für Tests)."""
+    """Konstruiert alle Kern-Agenten (Ollama-generate injizierbar für Tests).
+
+    Wenn COLLECT_K4N0N3_ENABLED=true und kein generate_fn übergeben wurde,
+    wird der K4N0N3-Adapter (k4n0n3.generate) als generate_fn verwendet.
+    """
+    if generate_fn is None and settings.k4n0n3_enabled:
+        from collect.k4n0n3 import generate as _k4generate
+        generate_fn = _k4generate
+        logger.info("K4N0N3-Adapter aktiv (Modell: %s)", settings.k4n0n3_model)
     from collect.agents.decision import DecisionAgent
     from collect.agents.executor import ExecutorAgent
     from collect.agents.filecontext import FileContextAgent
