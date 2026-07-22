@@ -26,12 +26,31 @@ logger = logging.getLogger(__name__)
 # (COLLECT_REWRITE_MAX_CONTENT_TERMS); Alias bindet beim Start.
 MAX_CONTENT_TERMS = settings.rewrite_max_content_terms
 
-# Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Bewusst OHNE
-# Artikel (der/die/das als Artikel) — nur eindeutig rückverweisende Formen.
+# Pronomen/Deixis, die auf den Vorkontext zeigen (DE + EN). Eindeutig
+# rückverweisende Formen; die mehrdeutigen Artikel-Demonstrative stehen
+# separat in _DEMONSTRATIVE (siehe dort).
+# da-Komposita sind ausnahmslos anaphorisch ("dagegen" = gegen DAS eben
+# Genannte) — die Liste deshalb vollstaendig halten, nicht stichprobenartig.
 _PRONOUNS = frozenset(
-    "das es dies dieser diese dieses damit dafür dafuer davon dabei dazu "
-    "daran darauf darüber darueber deshalb deswegen er ihn ihm "
+    "das es dies dieser diese dieses er ihn ihm denen da dort "
+    "damit dafür dafuer davon dabei dazu daran darauf darüber darueber "
+    "dagegen dadurch darin darunter davor danach dahinter daneben darum "
+    "daraus dazwischen deshalb deswegen "
     "it that this these those they them its".split())
+
+# Artikel-Demonstrative: "der/die/den/…" zeigen zurück, WENN kein Nomen folgt.
+#   "wie erkennt man den?"        → Demonstrativ, braucht den Vorkontext
+#   "wie funktioniert der Cache?" → Artikel, Frage steht für sich
+# Unterscheidung an der Großschreibung des Folgeworts (deutsche Nomen).
+#
+# Heuristik, kein Parser: ein vorangestelltes Adjektiv täuscht sie ("die
+# degressive Abschreibung" gilt als Demonstrativ). Das ist die guenstige
+# Fehlerrichtung — der Rewrite ist additiv (die Originalfrage läuft per RRF
+# weiter mit), ein ueberfluessiger Rewrite kostet also wenig, eine uebersehene
+# Folgefrage dagegen den Treffer. Gemessen am gesammelten Korpus (2026-07-21):
+# 98 eigenstaendige Fragen, davon genau EINE neu falsch-positiv; auf der
+# Gegenseite werden Faelle wie "wie erkennt man den?" nicht mehr uebersehen.
+_DEMONSTRATIVE = re.compile(r"\b[Dd](?:er|ie|en|em|es|eren|essen)\b(?!\s+[A-ZÄÖÜ])")
 
 # Konjunktions-/Anschluss-Anfänge, die einen vorherigen Turn voraussetzen
 _LEAD_IN = re.compile(
@@ -51,7 +70,9 @@ def is_referential(query: str) -> bool:
     if len(query_terms(q)) > settings.rewrite_max_content_terms:
         return False
     words = set(re.findall(r"[a-zäöüß]+", q.lower()))
-    return bool(words & _PRONOUNS) or bool(_LEAD_IN.match(q))
+    return (bool(words & _PRONOUNS)
+            or bool(_LEAD_IN.match(q))
+            or bool(_DEMONSTRATIVE.search(q)))
 
 
 def _clean(raw: str, original: str) -> str:
@@ -97,5 +118,29 @@ def rewrite(query: str, history: list,
     applied = rewritten != query
     if applied:
         logger.info("Rewrite: %r → %r", query[:50], rewritten[:70])
+    _record_rewrite_trace(prompt, rewritten)
     return {"original": query, "rewritten": rewritten,
             "applied": applied, "duration_ms": (time.time() - t0) * 1000}
+
+
+# Trace-Einhängung (Auftrag: der Rewriter ist das primäre Verhaltensziel).
+# Nur mitschreiben, nie eingreifen — record_if_enabled ist no-op wenn aus und
+# wirft nie. step_kind="rewrite"; das Target ist die umgeschriebene Query.
+_REWRITE_TRACE_SYSTEM = (
+    "Du bist ein Query-Rewriter für ein Retrieval-System. Forme die "
+    "referenzielle Folgefrage zu EINER eigenständigen Suchanfrage um, die "
+    "ohne den Verlauf verständlich ist. Antworte nur mit der Suchanfrage. "
+    "Ist die Frage bereits eigenständig, antworte mit: UNCHANGED"
+)
+
+
+def _record_rewrite_trace(prompt: str, rewritten: str) -> None:
+    try:
+        from collect.traces.collector import record_if_enabled
+        record_if_enabled("rewrite", [
+            {"role": "system", "content": _REWRITE_TRACE_SYSTEM},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": rewritten},
+        ])
+    except Exception:  # noqa: BLE001 — Tracing darf den Rewrite nie brechen
+        pass

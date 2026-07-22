@@ -39,6 +39,52 @@ def test_standalone_queries_pass_through(query):
     assert is_referential(query) is False
 
 
+@pytest.mark.parametrize("query", [
+    "wie erkennt man den?",
+    "wann ist die bindend?",
+    "ab welchem Prozentsatz greift der?",
+    "wie wird die gelöscht?",
+    "wie lange hält der?",
+    "woran ist die zerbrochen?",
+    "wer durfte da nicht rein?",
+    "welche Stoffe kommen da durch?",
+])
+def test_article_demonstratives_are_referential(query):
+    """Regression: bare "der/die/den" ohne folgendes Nomen zeigt zurück.
+
+    Diese Folgefragen gingen vorher ungerewritten ins Retrieval, weil die
+    Pronomenliste nur eindeutige Formen kannte."""
+    assert is_referential(query) is True
+
+
+@pytest.mark.parametrize("query", [
+    "wirkt ein Antibiotikum dagegen?",
+    "was entsteht dadurch?",
+    "was steckt darin?",
+    "was faellt darunter?",
+    "was war davor?",
+    "was kommt danach?",
+    "was verbirgt sich dahinter?",
+    "was liegt daneben?",
+    "was macht man darum?",
+    "was folgt daraus?",
+])
+def test_da_compounds_complete(query):
+    """da-Komposita sind ausnahmslos anaphorisch — Liste muss vollstaendig sein."""
+    assert is_referential(query) is True
+
+
+@pytest.mark.parametrize("query", [
+    "Wie funktioniert der TLS Handshake im Detail?",
+    "Was macht der Goertzel-Algorithmus?",
+    "Wie funktioniert die Photosynthese?",
+    "Welche Isolationsstufen kennt SQL?",
+])
+def test_articles_before_nouns_stay_standalone(query):
+    """Gegenprobe: mit folgendem Nomen ist es ein Artikel, kein Rückverweis."""
+    assert is_referential(query) is False
+
+
 # ── Rewrite-Funktion ─────────────────────────────────────────────────────
 
 def test_rewrite_applies_with_history():

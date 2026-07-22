@@ -1,0 +1,343 @@
+"""Tests für die Trace-Pipeline (schema, collector, validator, curate)."""
+
+import json
+import os
+import stat
+from pathlib import Path
+
+import pytest
+
+from collect.traces.schema import (
+    TOOL_DEFINITIONS, TraceEntry, TraceMeta, compute_schema_hash,
+    make_trace_id, validate_entry,
+)
+from collect.traces.collector import TraceCollector
+from collect.traces.validate import TraceValidator, detect_language, approx_tokens
+from collect.traces import curate
+
+
+def _entry_dict(step_kind="answer", tool_calls=None, target="Eine deutsche Antwort."):
+    assistant = {"role": "assistant", "content": target}
+    msgs = [
+        {"role": "system", "content": "System"},
+        {"role": "user", "content": "Frage auf Deutsch"},
+    ]
+    if tool_calls:
+        msgs.append({"role": "assistant", "tool_calls": tool_calls})
+        msgs.append({"role": "tool", "content": "{}"})
+    msgs.append(assistant)
+    return {
+        "messages": msgs, "tools": [],
+        "meta": {"trace_id": make_trace_id(msgs), "step_kind": step_kind,
+                 "tool_schema_hash": compute_schema_hash()},
+    }
+
+
+# ── Schema ───────────────────────────────────────────────────────────────
+
+def test_schema_hash_deterministic():
+    assert compute_schema_hash() == compute_schema_hash()
+    assert len(compute_schema_hash()) == 16
+
+
+def test_validate_entry_ok():
+    assert validate_entry(_entry_dict()) == []
+
+
+def test_validate_entry_missing_tools():
+    e = _entry_dict()
+    del e["tools"]
+    assert any("tools" in m for m in validate_entry(e))
+
+
+def test_validate_entry_last_must_be_assistant():
+    e = _entry_dict()
+    e["messages"].append({"role": "user", "content": "noch was"})
+    assert any("assistant" in m for m in validate_entry(e))
+
+
+def test_validate_entry_unknown_step_kind():
+    e = _entry_dict(step_kind="frobnicate")
+    assert any("step_kind" in m for m in validate_entry(e))
+
+
+def test_trace_entry_roundtrip():
+    e = TraceEntry.from_dict(_entry_dict())
+    d = e.to_dict()
+    assert d["meta"]["step_kind"] == "answer"
+    assert TraceEntry.from_dict(d).to_dict() == d
+
+
+def test_meta_extra_flattened():
+    m = TraceMeta(trace_id="x", step_kind="answer", extra={"zone": "TRUST"})
+    assert m.to_dict()["zone"] == "TRUST"
+
+
+# ── Collector ────────────────────────────────────────────────────────────
+
+def test_collector_record_rotating(tmp_path):
+    c = TraceCollector(base_dir=tmp_path)
+    tid = c.record("rewrite", _entry_dict("rewrite")["messages"])
+    assert tid
+    files = list(tmp_path.glob("*.jsonl"))
+    assert len(files) == 1  # eine Tagesdatei
+    loaded = c.load_all()
+    assert len(loaded) == 1 and loaded[0]["meta"]["step_kind"] == "rewrite"
+    assert loaded[0]["tools"] == []  # tools-Feld immer vorhanden
+
+
+def test_load_all_ignores_subdir_derivatives(tmp_path):
+    """Derivate (curated/) dürfen von load_all NICHT als Traces gelesen werden."""
+    c = TraceCollector(base_dir=tmp_path)
+    c.record("rewrite", _entry_dict("rewrite")["messages"])
+    curated = tmp_path / "curated"
+    curated.mkdir()
+    (curated / "training_set.jsonl").write_text(
+        json.dumps(_entry_dict("rewrite")) + "\n", encoding="utf-8")
+    assert len(c.load_all()) == 1  # nur der echte Trace, nicht das Derivat
+
+
+def test_collector_outcome_separate_file(tmp_path):
+    c = TraceCollector(base_dir=tmp_path)
+    c.record_outcome("wf-1", "trust_reached")
+    assert (tmp_path / "outcomes.jsonl").exists()
+    # Outcome-Datei wird von load_all ignoriert (kein Trace)
+    assert c.load_all() == []
+
+
+def test_collector_never_raises_on_readonly(tmp_path):
+    """Akzeptanz: Collector-Ausfall bricht keinen Agenten-Pfad."""
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    os.chmod(ro, stat.S_IRUSR | stat.S_IXUSR)  # read-only
+    c = TraceCollector(base_dir=ro / "sub")  # nicht anlegbar
+    try:
+        tid = c.record("answer", _entry_dict()["messages"])  # darf NICHT werfen
+        assert tid is None  # Fehler wurde geschluckt
+    finally:
+        os.chmod(ro, stat.S_IRWXU)
+
+
+def test_record_if_enabled_respects_flag(tmp_path, monkeypatch):
+    import collect.traces.collector as col
+    monkeypatch.setattr(col.settings, "traces_enabled", False)
+    monkeypatch.setattr(col.settings, "traces_dir", tmp_path)
+    col._collector = None
+    col.record_if_enabled("answer", _entry_dict()["messages"])
+    assert not list(tmp_path.glob("*.jsonl"))  # nichts geschrieben
+
+
+# ── Validator ────────────────────────────────────────────────────────────
+
+def test_detect_language():
+    assert detect_language("der die das und ist eine deutsche Antwort hier") == "de"
+    assert detect_language("the quick brown fox jumps over lazy") == "other"
+
+
+def test_detect_language_short_german_question():
+    """Kurze Fachfrage mit wenigen Stoppwörtern darf nicht als 'other' kippen."""
+    assert detect_language(
+        "Welche Speculative-Decoding-Varianten benötigen kein zweites Modell?") == "de"
+
+
+def test_validator_keeps_english_rewrite(tmp_path):
+    """Der Rewrite-Prompt verlangt Spracherhalt — englisch rein, englisch raus."""
+    e = _entry_dict("rewrite", target="How is a WebSocket connection kept alive?")
+    e["messages"][1]["content"] = ("GESPRÄCH:\nNutzer: How does a handshake work?\n\n"
+                                   "FOLGEFRAGE: and how is it kept alive?\n\n")
+    v = TraceValidator(traces_dir=tmp_path)
+    assert not [i for i in v._check_register_language(e["messages"])
+                if i["kind"] == "language"]
+
+
+def test_validator_flags_language_switch(tmp_path):
+    e = _entry_dict("rewrite", target="How is a WebSocket connection kept alive?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wie wird die am Leben gehalten?\n"
+    v = TraceValidator(traces_dir=tmp_path)
+    assert any(i["kind"] == "language"
+               for i in v._check_register_language(e["messages"]))
+
+
+def test_validator_flags_sie_register(tmp_path):
+    e = _entry_dict(target="Bitte beachten Sie Ihre Einstellungen sorgfältig genau.")
+    v = TraceValidator(traces_dir=tmp_path)
+    issues = v._check_register_language(e["messages"])
+    assert any(i["kind"] == "register" for i in issues)
+
+
+def test_validator_think_too_long(tmp_path):
+    long_think = "wort " * 120
+    e = _entry_dict(target=f"<think>{long_think}</think>\nAntwort")
+    v = TraceValidator(traces_dir=tmp_path)
+    issues = v._check_think(e["messages"])
+    assert any(i["kind"] == "think_length" for i in issues)
+
+
+def test_validator_unknown_tool(tmp_path):
+    e = _entry_dict(tool_calls=[{"function": {"name": "erfunden", "arguments": {}}}])
+    v = TraceValidator(traces_dir=tmp_path)
+    issues = v._check_tool_calls(e["messages"], e)
+    assert any(i["kind"] == "tool_call" for i in issues)
+
+
+def test_validator_histogram_empty():
+    assert "note" in TraceValidator._histogram([])
+
+
+def test_validator_histogram_percentiles():
+    h = TraceValidator._histogram(list(range(1, 101)))
+    assert h["p50"] <= h["p90"] <= h["p99"] <= h["max"]
+    assert h["over_1024"] == 0
+
+
+# ── Curate ───────────────────────────────────────────────────────────────
+
+def test_synth_think_by_kind():
+    assert "eigenständige" in curate.synth_think("rewrite")
+    assert "Antwort" in curate.synth_think("answer")
+
+
+def test_synth_think_varies_by_trace_id():
+    """Wortgleicher Think in jedem Beispiel macht das Target trivial lernbar."""
+    thinks = {curate.synth_think("rewrite", None, f"t{i}") for i in range(30)}
+    assert len(thinks) > 1
+    # aber reproduzierbar: gleiche id ⇒ gleicher Think
+    assert curate.synth_think("rewrite", None, "t7") == \
+        curate.synth_think("rewrite", None, "t7")
+
+
+def test_apply_think_inserts_block():
+    e = _entry_dict()
+    out = curate.apply_think(e, "Kurzer Grund.")
+    assert "<think>Kurzer Grund.</think>" in out["messages"][-1]["content"]
+
+
+def test_negative_unchanged_from_rewrite():
+    e = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    e["messages"][1]["content"] = (
+        "Formuliere die FOLGEFRAGE um.\n\nGESPRÄCH:\n"
+        "Nutzer: Was macht Goertzel?\nAssistent: Er misst eine Frequenz.\n\n"
+        "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:")
+    neg = curate.make_negative_unchanged(e)
+    assert neg is not None
+    # Target ist UNCHANGED, und die eigenständige Frage steht als FOLGEFRAGE drin
+    assert neg["messages"][-1]["content"] == "UNCHANGED"
+    assert "Wie robust ist der Goertzel-Algorithmus?" in neg["messages"][1]["content"]
+    assert "kein vorheriges Gespräch" in neg["messages"][1]["content"]
+    # der referenzielle Original-Wortlaut ist NICHT mehr die Folgefrage
+    assert "und wie robust ist das?" not in neg["messages"][1]["content"]
+    assert neg["meta"]["synthetic"] is True
+
+
+def test_negative_unchanged_skips_non_rewrite():
+    assert curate.make_negative_unchanged(_entry_dict("answer")) is None
+
+
+def test_negative_unchanged_skips_trivial_target():
+    # Zu kurzes/UNCHANGED-Target → kein brauchbares eigenständiges Beispiel
+    assert curate.make_negative_unchanged(_entry_dict("rewrite", target="UNCHANGED")) is None
+    assert curate.make_negative_unchanged(_entry_dict("rewrite", target="und dafür?")) is None
+
+
+def test_prefilter_passthrough():
+    e = _entry_dict("rewrite", target="und wofür das?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wofür das?\n\nEigenständige Frage:"
+    assert curate.prefilter(e) is not None
+
+
+def test_prefilter_leading_conjunction():
+    e = _entry_dict("rewrite", target="und wie viel kostet LoRA-Finetuning genau?")
+    assert "Konjunktion" in curate.prefilter(e)
+
+
+def test_prefilter_sie_register():
+    e = _entry_dict("rewrite", target="Was beachten Sie bei Prefetch-Layern?")
+    assert curate.prefilter(e) == "Sie-Register"
+
+
+def test_prefilter_too_short():
+    e = _entry_dict("rewrite", target="Was ist Burst-Traffic?")
+    assert "kurz" in curate.prefilter(e)
+
+
+def test_prefilter_passes_good_rewrite():
+    e = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    e["messages"][1]["content"] = "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:"
+    assert curate.prefilter(e) is None
+
+
+def test_prefilter_ignores_non_rewrite():
+    assert curate.prefilter(_entry_dict("answer", target="und kurz")) is None
+
+
+def test_curate_prefilter_auto_rejects(tmp_path):
+    good = _entry_dict("rewrite", target="Wie robust ist der Goertzel-Algorithmus?")
+    good["messages"][1]["content"] = "FOLGEFRAGE: und wie robust ist das?\n\nEigenständige Frage:"
+    bad = _entry_dict("rewrite", target="und wie das?")
+    verdicts = iter(["g"])  # nur der survivor wird gefragt
+    result = curate.curate_interactive(
+        [good, bad], tmp_path / "curation.jsonl",
+        input_fn=lambda _: next(verdicts, "q"), print_fn=lambda *a: None)
+    assert result["auto_rejected"] == 1 and result["kept"] == 1
+
+
+def _rewrite_trace(i: int) -> dict:
+    e = _entry_dict("rewrite", target=f"Wie funktioniert Verfahren Nummer {i} genau?")
+    e["messages"][1]["content"] = (
+        f"GESPRÄCH:\nNutzer: Was ist Verfahren {i}?\nAssistent: Ein Verfahren.\n\n"
+        f"FOLGEFRAGE: und wie genau?\n\nEigenständige Frage:")
+    e["meta"]["trace_id"] = f"tr{i:03d}"
+    return e
+
+
+def test_load_curated_ids_later_verdict_wins(tmp_path):
+    p = tmp_path / "curation.jsonl"
+    p.write_text('{"trace_id":"a","curated":true}\n'
+                 '{"trace_id":"b","curated":true}\n'
+                 '{"trace_id":"a","curated":false}\n', encoding="utf-8")
+    assert curate.load_curated_ids(p) == {"b"}
+
+
+def test_build_training_set_holds_out_eval():
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    res = curate.build_training_set(traces, ids, eval_n=5, negative_ratio=0.0)
+    assert len(res["eval"]) == 5 and res["n_positive"] == 15
+    train_ids = {t["meta"]["trace_id"] for t in res["train"]}
+    eval_ids = {t["meta"]["trace_id"] for t in res["eval"]}
+    assert not (train_ids & eval_ids)
+    # Eval ohne Think (dort wird gegen die reine Zielfrage verglichen)
+    assert all("<think>" not in t["messages"][-1]["content"] for t in res["eval"])
+    assert all("<think>" in t["messages"][-1]["content"] for t in res["train"])
+
+
+def test_build_training_set_no_negative_leaks_eval():
+    """Ein Negativ aus einem Eval-Trace traegt dessen Zielfrage ins Training."""
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    res = curate.build_training_set(traces, ids, eval_n=5, negative_ratio=0.3)
+    assert res["n_negative"] > 0
+    origins = {t["meta"].get("derived_from") for t in res["train"]
+               if t["meta"].get("synthetic")}
+    eval_ids = {t["meta"]["trace_id"] for t in res["eval"]}
+    assert not (origins & eval_ids)
+
+
+def test_build_training_set_deterministic():
+    traces = [_rewrite_trace(i) for i in range(20)]
+    ids = {t["meta"]["trace_id"] for t in traces}
+    a = curate.build_training_set(traces, ids, eval_n=5)
+    b = curate.build_training_set(list(reversed(traces)), ids, eval_n=5)
+    assert [t["meta"]["trace_id"] for t in a["eval"]] == \
+        [t["meta"]["trace_id"] for t in b["eval"]]
+
+
+def test_curate_interactive_writes_marker(tmp_path):
+    traces = [_entry_dict("rewrite", target="Wie funktioniert das TLS-Protokoll genau?")]
+    path = tmp_path / "curation.jsonl"
+    verdicts = iter(["g"])
+    result = curate.curate_interactive(
+        traces, path, input_fn=lambda _: next(verdicts, "q"), print_fn=lambda *a: None)
+    assert result["kept"] == 1
+    line = json.loads(path.read_text().splitlines()[0])
+    assert line["curated"] is True and line["think"]
