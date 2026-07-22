@@ -26,6 +26,33 @@ collect-api                # REST: /api/health, /api/query, /api/facts (Port 876
 # Dauerbetrieb: deploy/*.service (systemd-User-Units, Anleitung im File)
 ```
 
+## Beobachter (Autonome Hintergrundprozesse)
+
+```bash
+collect-observe start       # Autopilot + SilentObserver + OsmosisObserver starten
+collect-observe stop        # Alle Beobachter stoppen (in-process)
+collect-observe status      # Laufzeit-Status aller Beobachter
+collect-observe dream       # DreamCycle: Apoptose + Meta-Kristallisation (explizit)
+collect-observe analyze         # silent_observer.jsonl auswerten
+collect-observe analyze osmosis # osmosis_log.jsonl auswerten
+```
+
+Konfiguration via `.env` (Prefix `COLLECT_OBSERVE_`):
+
+| Variable | Default | Beschreibung |
+|---|---|---|
+| `COLLECT_OBSERVE_SILENT_INTERVAL` | 60 | Sekunden zwischen Phantom/Void/Drift-Scans |
+| `COLLECT_OBSERVE_OSMOSIS_ENABLED` | true | OsmosisObserver aktivieren |
+| `COLLECT_OBSERVE_OSMOSIS_INTERVAL` | 30 | Sekunden zwischen Topologie-Scans |
+| `COLLECT_OBSERVE_AUTOPILOT_ENABLED` | true | Autopilot aktivieren |
+| `COLLECT_OBSERVE_AUTOPILOT_INTERVAL` | 30 | Sekunden zwischen Query-Generierungen |
+| `COLLECT_OBSERVE_AUTOPILOT_CYCLES` | 500 | Max Zyklen (0 = endlos) |
+
+Logs liegen unter `data/`:
+- `silent_observer.jsonl` — Phantom/Void/Drift-Ereignisse
+- `osmosis_log.jsonl` — Osmose/Vakuum/Kristallisation
+- `distillation_data.jsonl` — Autopilot-Distillation (Input für DreamCycle)
+
 ## Sicherheitsnetz (vor jeder Änderung / im CI)
 
 ```bash
