@@ -101,12 +101,7 @@ def rewrite(query: str, history: list,
 
     try:
         if generate_fn is None:
-            from collect.agents import ollama
-
-            def generate_fn(p, **kw):
-                return ollama.generate(
-                    p, model=settings.rewrite_model or settings.decompose_model,
-                    timeout=15.0, temperature=0.0)
+            generate_fn = _default_generate_fn()
         raw = generate_fn(prompt)
         if isinstance(raw, tuple):
             raw = raw[0]
@@ -132,6 +127,34 @@ _REWRITE_TRACE_SYSTEM = (
     "ohne den Verlauf verständlich ist. Antworte nur mit der Suchanfrage. "
     "Ist die Frage bereits eigenständig, antworte mit: UNCHANGED"
 )
+
+
+def _default_generate_fn():
+    """Baut den generate_fn, wenn keiner uebergeben wurde.
+
+    rewrite_k4n0n3_enabled → der Rewriter (und NUR er) laeuft in-process ueber
+    den K4N0N3-Offload-Adapter, mit dem System-Prompt aus dem Training. Damit
+    ist der finetunte Qwythos nutzbar, obwohl er ueber Ollama auf dieser
+    Hardware nicht laeuft (qwen3_5 braucht MLX). Single-Shot, daher ist die
+    Offload-Latenz tragbar. Sonst der bisherige Ollama-Pfad."""
+    if settings.rewrite_k4n0n3_enabled:
+        from collect.k4n0n3 import generate as k4_generate
+        model = settings.k4n0n3_rewrite_model or settings.k4n0n3_model
+
+        def generate_fn(p, **kw):
+            # System-Prompt wie im Training mitgeben; der Rewriter-Prompt ist
+            # der User-Turn. K4N0N3 rendert per Chat-Template + strippt <think>.
+            return k4_generate(p, system=_REWRITE_TRACE_SYSTEM, model=model,
+                               temperature=0.0)
+        return generate_fn
+
+    from collect.agents import ollama
+
+    def generate_fn(p, **kw):
+        return ollama.generate(
+            p, model=settings.rewrite_model or settings.decompose_model,
+            timeout=15.0, temperature=0.0)
+    return generate_fn
 
 
 def _record_rewrite_trace(prompt: str, rewritten: str) -> None:

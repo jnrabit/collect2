@@ -172,3 +172,48 @@ def test_orchestrator_without_history_never_rewrites():
     assert called == []  # ohne Historie kein Rewrite-Aufruf
     manifests = [m for ch, m in bus.published if ch == "response_manifest"]
     assert manifests[0].data["rewritten_query"] is None
+
+
+# ── K4N0N3-Rewriter-Hook ─────────────────────────────────────────────────
+
+def test_default_generate_fn_ollama_by_default(monkeypatch):
+    """Ohne rewrite_k4n0n3_enabled: bisheriger Ollama-Pfad."""
+    from collect.retrieval import rewriter
+    monkeypatch.setattr(rewriter.settings, "rewrite_k4n0n3_enabled", False)
+    calls = {}
+    import collect.agents.ollama as ol
+    monkeypatch.setattr(ol, "generate",
+                        lambda p, **kw: calls.update(model=kw.get("model")) or "X")
+    fn = rewriter._default_generate_fn()
+    assert fn("prompt") == "X"
+
+
+def test_default_generate_fn_uses_k4n0n3_when_enabled(monkeypatch):
+    """Mit Flag: K4N0N3-Adapter, System-Prompt aus dem Training, konfig. Modell."""
+    from collect.retrieval import rewriter
+    monkeypatch.setattr(rewriter.settings, "rewrite_k4n0n3_enabled", True)
+    monkeypatch.setattr(rewriter.settings, "k4n0n3_rewrite_model", "/pfad/merged")
+    seen = {}
+    import collect.k4n0n3 as k4
+    monkeypatch.setattr(k4, "generate",
+                        lambda p, **kw: seen.update(p=p, **kw) or "REWRITE")
+    fn = rewriter._default_generate_fn()
+    out = fn("FOLGEFRAGE: und wie?")
+    assert out == "REWRITE"
+    assert seen["model"] == "/pfad/merged"
+    assert seen["system"] == rewriter._REWRITE_TRACE_SYSTEM
+    assert seen["temperature"] == 0.0
+
+
+def test_rewrite_routes_through_k4n0n3(monkeypatch):
+    """End-to-end: rewrite() ohne generate_fn nutzt bei Flag den Adapter."""
+    from collect.retrieval import rewriter
+    monkeypatch.setattr(rewriter.settings, "rewrite_enabled", True)
+    monkeypatch.setattr(rewriter.settings, "rewrite_k4n0n3_enabled", True)
+    monkeypatch.setattr(rewriter.settings, "k4n0n3_rewrite_model", "/m")
+    import collect.k4n0n3 as k4
+    monkeypatch.setattr(k4, "generate",
+                        lambda p, **kw: "Wie funktioniert der Goertzel-Algorithmus?")
+    r = rewriter.rewrite("und wie robust ist das?",
+                         [{"q": "Was ist Goertzel?", "a": "Ein Filter."}])
+    assert r["applied"] and "Goertzel" in r["rewritten"]

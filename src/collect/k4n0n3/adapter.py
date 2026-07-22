@@ -36,14 +36,22 @@ _MODEL_MAP: dict[str, str] = {
     "qwen2.5:7b": "Qwen/Qwen2.5-7B-Instruct",
 }
 
-# Layer-Budget je Modell (MB). Wichtig: das ist NUR das Layer-Budget —
+# Layer-Budget nach Substring im Modellnamen/-pfad (MB). Nur das LAYER-Budget —
 # Embeddings + lm_head liegen zusaetzlich resident auf der GPU. Bei Qwythos
 # sind das 3,79 GiB (Vokabular 248k, tie_word_embeddings=false); mit 6 GB
 # Layer-Budget waeren 8 GB VRAM rechnerisch ueberschritten (gemessenes OOM).
+# Substring, damit auch der gemergte Pfad (…qwythos-9b-rewrite…) trifft.
 _BUDGET_MB: dict[str, int] = {
-    "empero-ai/Qwythos-9B-Claude-Mythos-5-1M": 2048,
+    "wythos": 2048,   # Qwythos-9B (Basis wie gemergt)
 }
 _DEFAULT_BUDGET_MB = 3072
+
+
+def _budget_for(hf_name: str, auto_fn) -> int:
+    for needle, mb in _BUDGET_MB.items():
+        if needle.lower() in hf_name.lower():
+            return mb
+    return min(auto_fn(), _DEFAULT_BUDGET_MB)
 
 # Cache pro Modellname — ein globales Singleton lieferte sonst fuer
 # k4n0n3_rewrite_model still das zuerst geladene Modell zurueck.
@@ -86,8 +94,7 @@ def _get_k4model(model_name: str) -> object | None:
         if hf_name not in _k4models:
             try:
                 from k4n0n3 import ZeroFlushModel, auto_vram_budget
-                budget = _BUDGET_MB.get(
-                    hf_name, min(auto_vram_budget(), _DEFAULT_BUDGET_MB))
+                budget = _budget_for(hf_name, auto_vram_budget)
                 logger.info("K4N0N3 In-Process: %s (Layer-Budget %d MB)",
                             hf_name, budget)
                 # dtype bewusst NICHT erzwungen: from_pretrained ignoriert

@@ -219,6 +219,15 @@ class CollectSettings(BaseSettings):
         description="Modell für Query-Rewrite via K4N0N3-Adapter. "
                     "Leer = k4n0n3_model. Ein separates kleineres Modell "
                     "kann den Qwythos-Adapter für Rewrite-Aufgaben nutzen.")
+    rewrite_k4n0n3_enabled: bool = Field(
+        default=False,
+        description="NUR den Query-Rewriter in-process über den K4N0N3-Adapter "
+                    "fahren (nicht den ganzen Agenten-Stack wie k4n0n3_enabled). "
+                    "Für den finetunten Qwythos-Rewriter, der über Ollama auf "
+                    "dieser Hardware nicht läuft (qwen3_5 braucht MLX). Das "
+                    "Modell kommt aus k4n0n3_rewrite_model (z. B. der Pfad zum "
+                    "gemergten Adapter-Modell). Single-Shot, daher trägt die "
+                    "Sekunden-pro-Token-Latenz des Offload-Pfads hier.")
 
     # ── Trace-Pipeline (Trainingsdaten-Sammlung, CPU-only) ───────────────
     traces_enabled: bool = Field(

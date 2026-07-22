@@ -78,9 +78,16 @@ def test_model_cache_is_per_model(monkeypatch):
 
 
 def test_qwythos_budget_leaves_room_for_embeddings():
-    """3,79 GiB residente Embeddings + Layer-Budget muessen in 8 GB passen."""
-    budget = adapter._BUDGET_MB["empero-ai/Qwythos-9B-Claude-Mythos-5-1M"]
-    assert budget + 3790 < 8192
+    """3,79 GiB residente Embeddings + Layer-Budget muessen in 8 GB passen —
+    per Substring, damit auch der gemergte Pfad (…qwythos-9b-rewrite…) trifft."""
+    for name in ("empero-ai/Qwythos-9B-Claude-Mythos-5-1M",
+                 "/home/jnrabit/models/qwythos-9b-rewrite-v2-merged"):
+        budget = adapter._budget_for(name, lambda: 9999)
+        assert budget == 2048 and budget + 3790 < 8192
+
+
+def test_budget_falls_back_to_auto_for_unknown():
+    assert adapter._budget_for("qwen2.5:3b", lambda: 3072) == 3072
 
 
 # ── Prompt-Rendering / Prompt-Echo ───────────────────────────────────────
