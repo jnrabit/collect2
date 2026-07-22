@@ -124,7 +124,7 @@ def _collect_all(topic: str, lang: str, limit: int, dry_run: bool,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Vault-Ingest von einer Quelle")
-    ap.add_argument("source", choices=["wikipedia", "arxiv", "rfc", "all"])
+    ap.add_argument("source", choices=["wikipedia", "arxiv", "rfc", "all", "explore"])
     ap.add_argument("topic", nargs="?", default="", help="Thema/Suchbegriff")
     ap.add_argument("--limit", type=int, default=0,
                     help="max. neue Docs (0 = unbegrenzt)")
@@ -148,7 +148,15 @@ def main() -> int:
 
     from collect.harvest.ingest import VaultIngest
 
-    if args.source == "all":
+    if args.source == "explore":
+        from collect.harvest.explore import run_explore
+        return run_explore(
+            lang=args.lang,
+            cycles=0,
+            limit=limit,
+            dry_run=args.dry_run,
+        )
+    elif args.source == "all":
         if not args.topic:
             print("Fehler: Topic erforderlich für 'all'.")
             return 1
