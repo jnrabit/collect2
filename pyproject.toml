@@ -43,6 +43,7 @@ collect-harvest = "collect.harvest.cli:main"
 collect-eval = "collect.eval:main"
 collect-vault = "collect.vault_cli:main"
 collect-traces = "collect.traces.cli:main"
+collect-observe = "collect.observe_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

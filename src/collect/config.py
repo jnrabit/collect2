@@ -497,6 +497,20 @@ class CollectSettings(BaseSettings):
                     "trotzdem, mit deutlichem Nicht-geerdet-Hinweis.",
     )
 
+    # ── Beobachter (SilentObserver, Autopilot, OsmosisObserver, DreamCycle) ──
+    observe_silent_interval: int = Field(
+        default=60, description="SilentObserver: Sekunden zwischen Phantom/Void/Drift-Scans")
+    observe_osmosis_enabled: bool = Field(
+        default=True, description="OsmosisObserver beim Start aktivieren")
+    observe_osmosis_interval: int = Field(
+        default=30, description="OsmosisObserver: Sekunden zwischen Topologie-Scans")
+    observe_autopilot_enabled: bool = Field(
+        default=True, description="Autopilot beim Start aktivieren")
+    observe_autopilot_interval: int = Field(
+        default=30, description="Autopilot: Sekunden zwischen Query-Generierungen")
+    observe_autopilot_cycles: int = Field(
+        default=500, description="Autopilot: max Zyklen (0=endlos)")
+
     # ── Timeouts ────────────────────────────────────────────────────────
     query_timeout: float = 180.0
     retrieval_timeout: float = 8.0
