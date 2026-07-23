@@ -57,13 +57,44 @@ class IngestResult:
     backups: list = field(default_factory=list)
     committed: bool = False
     error: str = ""
+    by_source_new: dict = field(default_factory=dict)
+    by_source_dupe: dict = field(default_factory=dict)
 
-    def summary(self) -> str:
+    def summary(self, verbose: bool = True) -> str:
         if self.error:
             return f"✗ Ingest abgebrochen: {self.error} (Vault unverändert)"
-        return (f"✓ {self.added} neu, {self.skipped_dupe} Duplikat(e), "
-                f"{self.skipped_quality} Qualität — Vault: {self.total_after} Docs. "
-                f"Backups: {', '.join(Path(b).name for b in self.backups)}")
+        base = (f"✓ {self.added} neu, {self.skipped_dupe} Duplikat(e), "
+                f"{self.skipped_quality} Qualität — Vault: {self.total_after} Docs")
+        if verbose:
+            sources = self.by_source_new.copy()
+            for src, n in self.by_source_dupe.items():
+                sources[src] = sources.get(src, 0)  # behält 0 für nur-dupe
+            if sources:
+                parts = []
+                for src in sorted(sources, key=lambda s: -(self.by_source_new.get(s, 0) + self.by_source_dupe.get(s, 0))):
+                    n = self.by_source_new.get(src, 0)
+                    d = self.by_source_dupe.get(src, 0)
+                    tag = _source_tag(src)
+                    if n:
+                        parts.append(f"{tag}+{n}" + (f"/{d}dupe" if d else ""))
+                    elif d:
+                        parts.append(f"{tag}{d}dupe")
+                base += " | " + " ".join(parts)
+            base += f"\n  Backups: {', '.join(Path(b).name for b in self.backups)}"
+        return base
+
+
+def _source_tag(source: str) -> str:
+    """Komprimiertes Source-Tag für die Summary-Zeile."""
+    s = source.lower()
+    if "arxiv" in s: return "📄AX"
+    if "wiki" in s or "crawler" in s: return "📚WK"
+    if "semantic" in s: return "🔬S2"
+    if "openalex" in s: return "📊OA"
+    if "gutenberg" in s: return "📜GB"
+    if "stackexchange" in s: return "💬SE"
+    if "rfc" in s: return "📋RF"
+    return s[:8]
 
 
 class VaultIngest:
@@ -103,9 +134,11 @@ class VaultIngest:
 
         fresh = []
         for doc in docs:
+            src = str(doc.get("source", "unknown"))
             reason = self._accept(doc, known_ids, known_hashes)
             if reason == "dupe":
                 res.skipped_dupe += 1
+                res.by_source_dupe[src] = res.by_source_dupe.get(src, 0) + 1
                 continue
             if reason == "quality":
                 res.skipped_quality += 1
@@ -113,6 +146,7 @@ class VaultIngest:
             fresh.append(doc)
             known_ids.add(str(doc["id"]))
             known_hashes.add(content_hash(str(doc.get("content", ""))))
+            res.by_source_new[src] = res.by_source_new.get(src, 0) + 1
             if on_progress:
                 on_progress(len(fresh), doc.get("title", ""))
 
