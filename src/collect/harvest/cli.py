@@ -3,7 +3,13 @@
     collect-harvest wikipedia "HTTP protocol" --limit 300 --lang en
     collect-harvest arxiv "transformer attention" --limit 10
     collect-harvest rfc --limit 5
-    collect-harvest all "quantum chaos"           # alle drei Quellen parallel
+    collect-harvest all "quantum chaos"           # Wikipedia + ArXiv + RFC
+    collect-harvest semantic                       # Frontier-Paper via Semantic Scholar
+    collect-harvest openalex                       # Foundation-Paper via OpenAlex
+    collect-harvest gutenberg                      # Klassische Texte via Project Gutenberg
+    collect-harvest stackexchange                  # Q&A-Wissen via StackExchange
+    collect-harvest deep                           # alle Quellen (autonomer Themen-Katalog)
+    collect-harvest explore                        # Wikipedia-SURF + ArXiv-DEEPEN (autonom)
 
 Idempotent: bereits vorhandene Docs (per ID) werden nicht erneut gefetcht.
 Der laufende Agenten-Stack sieht neue Docs erst nach Neustart (RAM-Kopie).
@@ -16,6 +22,7 @@ import argparse
 import signal
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from collect.config import settings
@@ -124,7 +131,10 @@ def _collect_all(topic: str, lang: str, limit: int, dry_run: bool,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Vault-Ingest von einer Quelle")
-    ap.add_argument("source", choices=["wikipedia", "arxiv", "rfc", "all", "explore"])
+    ap.add_argument("source", choices=[
+        "wikipedia", "arxiv", "rfc", "all", "explore",
+        "semantic", "openalex", "gutenberg", "stackexchange", "deep",
+    ])
     ap.add_argument("topic", nargs="?", default="", help="Thema/Suchbegriff")
     ap.add_argument("--limit", type=int, default=0,
                     help="max. neue Docs (0 = unbegrenzt)")
@@ -156,6 +166,66 @@ def main() -> int:
             limit=limit,
             dry_run=args.dry_run,
         )
+    elif args.source == "semantic":
+        from collect.harvest.semantic_scholar import harvest_topics as s2_harvest
+        docs = s2_harvest(limit_per_topic=20 if limit == 0 else max(5, limit // 50))
+        print(f"{len(docs)} Semantic Scholar Docs gesammelt. Ingest…")
+    elif args.source == "openalex":
+        from collect.harvest.openalex import harvest_topics as oa_harvest
+        docs = oa_harvest(limit_per_topic=30 if limit == 0 else max(3, limit // 20))
+        print(f"{len(docs)} OpenAlex Docs gesammelt. Ingest…")
+    elif args.source == "gutenberg":
+        from collect.harvest.gutenberg import harvest_gutenberg
+        docs = harvest_gutenberg(max_books=20 if limit == 0 else max(5, limit // 10))
+        print(f"{len(docs)} Gutenberg Docs gesammelt. Ingest…")
+    elif args.source == "stackexchange":
+        from collect.harvest.stackexchange import harvest_topics as se_harvest
+        docs = se_harvest(limit_per_tag=10 if limit == 0 else max(2, limit // 60))
+        print(f"{len(docs)} StackExchange Docs gesammelt. Ingest…")
+    elif args.source == "deep":
+        from collect.harvest.semantic_scholar import harvest_topics as s2_harvest
+        from collect.harvest.openalex import harvest_topics as oa_harvest
+        from collect.harvest.gutenberg import harvest_gutenberg
+        from collect.harvest.stackexchange import harvest_topics as se_harvest
+
+        print(f"\n{'='*60}")
+        print(f"🌐 HARVEST DEEP — alle Quellen (max {limit} Docs)")
+        print(f"{'='*60}")
+        abort = threading.Event()
+
+        def _sig(sig, frame):
+            print("\n⏸️  Abbruch — speichere...")
+            abort.set()
+        old_i = signal.signal(signal.SIGINT, _sig)
+        old_t = signal.signal(signal.SIGTERM, _sig)
+
+        try:
+            docs: list[dict] = []
+            for name, fn, kwargs in [
+                ("OpenAlex", oa_harvest, {"limit_per_topic": 10, "min_citations": 30}),
+                ("Semantic Scholar", s2_harvest, {"limit_per_topic": 15, "year_from": 2020}),
+                ("StackExchange", se_harvest, {"limit_per_tag": 8}),
+                ("Gutenberg", harvest_gutenberg, {"max_books": 10}),
+            ]:
+                if abort.is_set() or (limit > 0 and len(docs) >= limit):
+                    break
+                try:
+                    new = fn(**kwargs)
+                    deduped = [d for d in new if d["id"] not in known]
+                    for d in deduped:
+                        known.add(d["id"])
+                    docs.extend(deduped)
+                    print(f"  {name}: {len(deduped)} Docs")
+                except Exception as e:
+                    print(f"  ⚠️ {name}: {e}")
+                if abort.is_set():
+                    break
+                time.sleep(1)
+        finally:
+            signal.signal(signal.SIGINT, old_i)
+            signal.signal(signal.SIGTERM, old_t)
+
+        print(f"\n{len(docs)} Docs aus allen Quellen gesammelt. Ingest…")
     elif args.source == "all":
         if not args.topic:
             print("Fehler: Topic erforderlich für 'all'.")
