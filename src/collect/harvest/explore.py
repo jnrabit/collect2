@@ -1,10 +1,10 @@
-"""collect-harvest explore — autonomer Knowledge-Graph-Crawler.
+"""collect-explore — autonomer Knowledge-Graph-Crawler.
 
-Kombiniert SEC_WIKI_CRAWLER's Link-Following mit TF-IDF-Query-Generierung:
-  1. SURF: Wikipedia-Links folgen (wie SEC_WIKI_CRAWLER)
-  2. QUERY: Aus gesammelten Seiten TF-IDF-Terme extrahieren
-  3. DEEPEN: ArXiv mit den extrahierten Termen durchsuchen
-  4. Wiederhole ab 1 mit neuen Links aus Wikipedia + ArXiv
+Kombiniert SEC_WIKI_CRAWLER's Link-Following mit Multi-Source-Deepening:
+  1. SURF:    Wikipedia-Links folgen (wie SEC_WIKI_CRAWLER)
+  2. QUERY:   TF-IDF-Terme aus gesammelten Seiten extrahieren
+  3. DEEPEN:  ArXiv + Semantic Scholar + OpenAlex (--deep)
+              oder nur ArXiv (default)
 
 Kein manuelles Topic — der Crawler entdeckt selbstständig.
 
@@ -12,6 +12,7 @@ USAGE:
   collect-harvest explore  --lang de
   collect-harvest explore  --cycles 50 --limit 200
   collect-harvest explore  --dry-run
+  collect-explore --lang de --deep       # alle Quellen (ArXiv + S2 + OA)
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 from collect.config import settings
 
@@ -199,14 +201,69 @@ def _arxiv_single(topic: str, limit: int, known_ids: set[str],
         return []
 
 
+def _deepen_query(query: str, known_ids: set[str], known_titles: set[str],
+                  abort: threading.Event, sources: set[str]) -> list[dict]:
+    """Multi-Source-Deepening: ArXiv + Semantic Scholar + OpenAlex."""
+    all_docs: list[dict] = []
+    limit = 5
+
+    for name, fn, kwargs in [
+        ("ArXiv", _arxiv_single, {"topic": query, "limit": limit,
+                                   "known_ids": known_ids, "_abort": abort}),
+    ]:
+        if abort.is_set():
+            break
+        try:
+            new = fn(**kwargs)
+            all_docs.extend(new)
+            if new:
+                logger.debug("  %s: +%d", name, len(new))
+        except Exception as e:
+            logger.debug("  %s fehlgeschlagen: %s", name, e)
+
+    if "s2" in sources and not abort.is_set():
+        try:
+            from collect.harvest.semantic_scholar import search_semantic_scholar
+            docs = search_semantic_scholar(query, limit=limit)
+            fresh = [d for d in docs if d["id"] not in known_ids]
+            for d in fresh:
+                known_ids.add(d["id"])
+                known_titles.add(str(d.get("title", "")))
+            all_docs.extend(fresh)
+            if fresh:
+                logger.debug("  S2: +%d", len(fresh))
+        except RuntimeError:
+            logger.info("  S2 rate-limited — deaktiviert für diesen Lauf")
+            sources.discard("s2")
+        except Exception as e:
+            logger.debug("  S2 fehlgeschlagen: %s", e)
+
+    if "oa" in sources and not abort.is_set():
+        try:
+            from collect.harvest.openalex import search_openalex
+            docs = search_openalex(query, limit=limit, min_citations=10)
+            fresh = [d for d in docs if d["id"] not in known_ids]
+            for d in fresh:
+                known_ids.add(d["id"])
+                known_titles.add(str(d.get("title", "")))
+            all_docs.extend(fresh)
+            if fresh:
+                logger.debug("  OA: +%d", len(fresh))
+        except Exception as e:
+            logger.debug("  OA fehlgeschlagen: %s", e)
+
+    return all_docs
+
+
 # ── Explore-Loop ──────────────────────────────────────────────────────────────
 
 
-def run_explore(lang: str = "de", cycles: int = 0, limit: int = 200,
-                dry_run: bool = False, arxiv_queries: int = 5) -> int:
-    """Haupt-Loop: Wikipedia-Crawl → Query-Extraktion → ArXiv-Deepening.
+def run_explore(lang: str = "de", cycles: int = 0, limit: int = 0,
+                dry_run: bool = False, deep: bool = False) -> int:
+    """Haupt-Loop: Wikipedia-Crawl → Query-Extraktion → Multi-Source-Deepening.
 
     cycles=0 → unbegrenzt. limit=0 → unbegrenzt.
+    deep=True → Semantic Scholar + OpenAlex zusätzlich zu ArXiv.
     """
     from collect.harvest.ingest import VaultIngest
     from collect.retrieval.vault import Vault
@@ -220,8 +277,8 @@ def run_explore(lang: str = "de", cycles: int = 0, limit: int = 200,
     ingest = VaultIngest()
     abort = threading.Event()
     all_docs: list[dict] = []
-    total_wiki = 0
-    total_arxiv = 0
+    sources: set[str] = {"arxiv", "s2", "oa"} if deep else {"arxiv"}
+    total = {"wiki": 0, "arxiv": 0, "s2": 0, "oa": 0}
 
     def _handle_sig(sig, frame):
         print("\n⏸️  Abbruch — speichere gesammelte Docs...")
@@ -247,28 +304,35 @@ def run_explore(lang: str = "de", cycles: int = 0, limit: int = 200,
                 known_titles.add(doc["title"])
                 known_ids.add(doc["id"])
                 all_docs.append(doc)
-                total_wiki += 1
+                total["wiki"] += 1
 
-                # 2. Query aus der neuen Seite extrahieren
+                # 2. Query aus der neuen Seite extrahieren → Multi-Source Deepen
                 query = _extract_query_terms(
                     doc["title"] + " " + doc["content"], n=3
                 )
-                if query and arxiv_queries > 0:
-                    logger.info("  🔍 ArXiv: '%s'", query)
-                    arxiv_docs = _arxiv_single(query, max(5, arxiv_queries),
-                                               known_ids, abort)
-                    for ad in arxiv_docs:
-                        known_titles.add(str(ad.get("title", "")))
-                        all_docs.append(ad)
-                        total_arxiv += 1
-                    time.sleep(random.uniform(1.0, 2.0))  # Höflichkeit
+                if query:
+                    src_tags = "+".join(sorted(sources))
+                    logger.info("  🔍 [%s] '%s'", src_tags, query)
+                    deep_docs = _deepen_query(query, known_ids, known_titles,
+                                              abort, sources)
+                    for dd in deep_docs:
+                        all_docs.append(dd)
+                        src = dd.get("source", "").lower()
+                        if "arxiv" in src:
+                            total["arxiv"] += 1
+                        elif "semantic" in src:
+                            total["s2"] += 1
+                        elif "openalex" in src:
+                            total["oa"] += 1
+                    time.sleep(random.uniform(1.0, 2.0))
             else:
                 time.sleep(1.0)
 
             # Persistieren alle 10 Docs
             if len(all_docs) >= 10 and len(all_docs) % 10 < 2:
-                logger.info("  💾 Zwischenstand: %d Docs (W:%d A:%d)",
-                            len(all_docs), total_wiki, total_arxiv)
+                w, a, s2, oa = total["wiki"], total["arxiv"], total["s2"], total["oa"]
+                logger.info("  💾 Zwischenstand: %d Docs (W:%d A:%d S2:%d OA:%d)",
+                            len(all_docs), w, a, s2, oa)
                 if not dry_run and all_docs:
                     result = ingest.ingest(all_docs[-10:], dry_run=dry_run)
                     if result.committed:
@@ -286,8 +350,9 @@ def run_explore(lang: str = "de", cycles: int = 0, limit: int = 200,
         result = ingest.ingest(all_docs, dry_run=dry_run)
         logger.info("Abschluss-Ingest: %s", result.summary())
 
-    logger.info("Explore beendet: %d Wiki + %d ArXiv = %d Docs",
-                total_wiki, total_arxiv, total_wiki + total_arxiv)
+    logger.info("Explore beendet: %d Wiki + %d ArXiv + %d S2 + %d OA = %d Docs",
+                total["wiki"], total["arxiv"], total["s2"], total["oa"],
+                sum(total.values()))
     return 0
 
 
@@ -296,8 +361,8 @@ def run_explore(lang: str = "de", cycles: int = 0, limit: int = 200,
 
 def main():
     ap = argparse.ArgumentParser(
-        description="collect-harvest explore — autonomer Knowledge-Graph-Crawler",
-        epilog="Wikipedia SURF + TF-IDF → ArXiv DEEPEN. Kein manuelles Topic.",
+        description="collect-explore — autonomer Knowledge-Graph-Crawler",
+        epilog="Wikipedia SURF + Multi-Source DEEPEN. Kein manuelles Topic.",
     )
     ap.add_argument("--lang", default="de", choices=["en", "de"])
     ap.add_argument("--cycles", type=int, default=0,
@@ -306,8 +371,8 @@ def main():
                     help="max. neue Docs insgesamt (0=unbegrenzt)")
     ap.add_argument("--dry-run", action="store_true",
                     help="nur sammeln, nicht in Vault schreiben")
-    ap.add_argument("--arxiv-queries", type=int, default=5,
-                    help="ArXiv-Docs pro extrahierter Query")
+    ap.add_argument("--deep", action="store_true",
+                    help="ArXiv + Semantic Scholar + OpenAlex (sonst nur ArXiv)")
     args = ap.parse_args()
 
     return run_explore(
@@ -315,7 +380,7 @@ def main():
         cycles=args.cycles,
         limit=args.limit,
         dry_run=args.dry_run,
-        arxiv_queries=args.arxiv_queries,
+        deep=args.deep,
     )
 
 

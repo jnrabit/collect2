@@ -165,6 +165,7 @@ def main() -> int:
             cycles=0,
             limit=limit,
             dry_run=args.dry_run,
+            deep=True,
         )
     elif args.source == "semantic":
         from collect.harvest.semantic_scholar import harvest_topics as s2_harvest
