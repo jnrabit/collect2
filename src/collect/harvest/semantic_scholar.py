@@ -57,11 +57,10 @@ def search_semantic_scholar(query: str, limit: int = 100, year_from: int = 2020,
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.loads(r.read().decode("utf-8"))
     except Exception as e:
-        if "429" in str(e):
-            logger.warning("Semantic Scholar rate-limited, warte 10s")
-            time.sleep(10)
-            return []
-        logger.debug("Semantic Scholar error: %s", e)
+        msg = str(e)
+        if "429" in msg:
+            raise RuntimeError("rate_limited")  # nach oben reichen
+        logger.debug("Semantic Scholar error: %s", msg[:100])
         return []
 
     docs = []
@@ -87,13 +86,19 @@ def search_semantic_scholar(query: str, limit: int = 100, year_from: int = 2020,
 
 def harvest_topics(limit_per_topic: int = 20, topics: Optional[list[str]] = None,
                    year_from: int = 2020) -> list[dict]:
-    """Durchläuft alle Frontier-Themen, sammelt Docs."""
+    """Durchläuft alle Frontier-Themen, sammelt Docs.
+    Bei Rate-Limit: bricht ab (nicht 44×10s schlafen)."""
     topic_list = topics or FRONTIER_TOPICS
     all_docs = []
     for topic in topic_list:
-        docs = search_semantic_scholar(topic, limit=limit_per_topic, year_from=year_from)
+        try:
+            docs = search_semantic_scholar(topic, limit=limit_per_topic, year_from=year_from)
+        except RuntimeError:
+            logger.info("S2: rate-limited — überspringe restliche %d Themen",
+                        len(topic_list) - len(all_docs))
+            break
         all_docs.extend(docs)
         if docs:
             logger.info("S2: '%s' → %d Docs", topic, len(docs))
-        time.sleep(0.8)  # Rate-Limit ohne API-Key
+        time.sleep(0.8)
     return all_docs
