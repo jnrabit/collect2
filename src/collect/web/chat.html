@@ -290,26 +290,44 @@ function toggleSourceCard(refEl, src) {
     return;
   }
   const card = document.createElement("div");
-  card.className = "src-card";
+  card.className = "src-card open";
   card.dataset.docid = src.doc_id;
   card.innerHTML = "<em>lädt…</em>";
   refEl.after(card);
-  card.classList.add("open");
+
+  const show = (title, source, content) => {
+    card.innerHTML = "";
+    if (title) {
+      const s = document.createElement("strong");
+      s.textContent = title;
+      card.appendChild(s);
+    }
+    if (source) {
+      const e = document.createElement("em");
+      e.textContent = " (" + source + ")";
+      e.style.color = "var(--dim)";
+      card.appendChild(e);
+    }
+    if (content) {
+      card.appendChild(document.createElement("br"));
+      card.appendChild(document.createElement("br"));
+      card.appendChild(document.createTextNode(content.substring(0, 2500)));
+    }
+  };
 
   const tok = apiToken();
   const hdr = tok ? { "Authorization": "Bearer " + tok } : {};
   fetch(`/api/vault/doc/${encodeURIComponent(src.doc_id)}`, { headers: hdr })
-    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(r => r.json())
     .then(doc => {
-      card.innerHTML =
-        `<strong>${escapeHtml(doc.title || src.title || "Quelle")}</strong>` +
-        (doc.source ? ` <em>(${escapeHtml(doc.source)})</em>` : "") +
-        `<br><br>${escapeHtml((doc.content || "").substring(0, 2500))}`;
+      const title = doc.title || src.title || "";
+      const source = doc.source || src.source || "";
+      const content = doc.content || "";
+      if (!title && !content) throw new Error("empty");
+      show(title, source, content);
     })
     .catch(() => {
-      card.innerHTML = `<em>Quelle im Vault nicht abrufbar</em><br><br>` +
-        `<strong>${escapeHtml(src.title || "")}</strong>` +
-        (src.source ? ` — ${escapeHtml(src.source)}` : "");
+      show(src.title || src.doc_id || "", src.source || "", "");
     });
 }
 
