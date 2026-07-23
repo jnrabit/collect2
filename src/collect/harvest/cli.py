@@ -207,7 +207,7 @@ def main() -> int:
                 ("StackExchange", se_harvest, {"limit_per_tag": 8}),
                 ("Gutenberg", harvest_gutenberg, {"max_books": 10}),
             ]:
-                if abort.is_set() or (limit > 0 and len(docs) >= limit):
+                if abort.is_set():
                     break
                 try:
                     new = fn(**kwargs)
@@ -218,13 +218,12 @@ def main() -> int:
                     print(f"  {name}: {len(deduped)} Docs")
                 except Exception as e:
                     print(f"  ⚠️ {name}: {e}")
-                if abort.is_set():
-                    break
-                time.sleep(1)
         finally:
             signal.signal(signal.SIGINT, old_i)
             signal.signal(signal.SIGTERM, old_t)
 
+        if limit > 0 and len(docs) > limit:
+            docs = docs[:limit]
         print(f"\n{len(docs)} Docs aus allen Quellen gesammelt. Ingest…")
     elif args.source == "all":
         if not args.topic:
