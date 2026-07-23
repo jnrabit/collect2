@@ -125,15 +125,18 @@ class WikiSurfer:
         # Links für nächste Runde extrahieren — auch bei bekannten Seiten
         try:
             self._chain_links = list(page.links)
-            logger.debug("  %d Links für nächste Runde", len(self._chain_links))
         except Exception:
-            self._chain_links = []
+            pass
 
         if page.title in known_titles:
             logger.debug("  '%s' bereits bekannt — Links übernommen", page.title)
             return None
 
-        summary = str(page.summary or "")
+        try:
+            summary = str(page.summary or "")
+        except Exception as e:
+            logger.debug("  '%s' summary-Fehler (%s) — übersprungen", page.title, type(e).__name__)
+            return None
         if len(summary) < 200:
             logger.debug("  '%s' zu kurz (%d chars)", page.title, len(summary))
             return None
