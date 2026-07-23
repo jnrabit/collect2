@@ -21,18 +21,14 @@ SE_API = "https://api.stackexchange.com/2.3"
 SITES = [
     "physics",
     "math",
-    "stats",       # Cross Validated
-    "ai",
-    "philosophy",
+    "stats",
     "cstheory",
 ]
 
 SE_TAGS = [
-    "entropy", "chaos", "thermodynamics", "non-equilibrium",
-    "phase-transition", "information-theory", "dynamical-systems",
+    "entropy", "thermodynamics", "information-theory",
     "quantum-mechanics", "statistical-mechanics", "complex-systems",
-    "emergence", "nonlinear-dynamics", "stochastic-processes",
-    "critical-phenomena", "topology", "symmetry-breaking",
+    "nonlinear-dynamics", "chaos", "phase-transition",
 ]
 
 
@@ -50,14 +46,18 @@ def search_stackexchange(tag: str, site: str = "physics",
     url = f"{SE_API}/questions?{urllib.parse.urlencode(params)}"
 
     try:
-        req = urllib.request.Request(url, headers={"Accept-Encoding": "gzip"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read().decode("utf-8"))
+        with urllib.request.urlopen(url, timeout=15) as r:
+            raw = r.read().decode("utf-8")
+            data = json.loads(raw)
     except Exception as e:
-        if "502" in str(e) or "backoff" in str(e).lower():
+        msg = str(e)
+        if "502" in msg or "503" in msg:
             time.sleep(10)
             return []
-        logger.debug("StackExchange error: %s", e)
+        if "backoff" in msg.lower():
+            time.sleep(15)
+            return []
+        logger.debug("StackExchange error (%s): %s", site, msg[:80])
         return []
 
     docs = []

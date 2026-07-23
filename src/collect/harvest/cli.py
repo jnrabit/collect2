@@ -201,6 +201,7 @@ def main() -> int:
 
         try:
             docs: list[dict] = []
+            results: dict[str, int] = {}
             for name, fn, kwargs in [
                 ("OpenAlex", oa_harvest, {"limit_per_topic": 10, "min_citations": 30}),
                 ("Semantic Scholar", s2_harvest, {"limit_per_topic": 15, "year_from": 2020}),
@@ -215,9 +216,15 @@ def main() -> int:
                     for d in deduped:
                         known.add(d["id"])
                     docs.extend(deduped)
-                    print(f"  {name}: {len(deduped)} Docs")
+                    results[name] = len(deduped)
+                    status = f"{len(deduped)} Docs" if deduped else "keine neuen"
+                    print(f"  {name}: {status}")
                 except Exception as e:
+                    results[name] = -1
                     print(f"  ⚠️ {name}: {e}")
+                if abort.is_set():
+                    break
+                time.sleep(1)
         finally:
             signal.signal(signal.SIGINT, old_i)
             signal.signal(signal.SIGTERM, old_t)

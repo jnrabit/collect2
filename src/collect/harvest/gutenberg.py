@@ -36,9 +36,10 @@ GUTENBERG_SUBJECTS = [
 def _search_books(query: str) -> list[dict]:
     url = f"{GUTENDEX}?search={urllib.parse.quote(query)}&languages=en"
     try:
-        with urllib.request.urlopen(url, timeout=20) as r:
+        with urllib.request.urlopen(url, timeout=15) as r:
             return json.loads(r.read()).get("results", [])
-    except Exception:
+    except Exception as e:
+        logger.debug("Gutendex search error (%s): %s", query, str(e)[:80])
         return []
 
 
@@ -46,17 +47,18 @@ def _fetch_text(book: dict) -> str | None:
     fmts = book.get("formats", {})
     for fmt_name in ["text/plain; charset=utf-8", "text/plain"]:
         url = fmts.get(fmt_name)
-        if not url:
+        if not url or not url.startswith("http"):
             continue
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
-                raw = r.read()
-            for enc in ["utf-8", "latin-1"]:
+            with urllib.request.urlopen(url, timeout=25) as r:
+                raw = r.read(1_000_000)
+            for enc in ["utf-8", "latin-1", "cp1252"]:
                 try:
                     return raw.decode(enc)
                 except Exception:
                     continue
-        except Exception:
+        except Exception as e:
+            logger.debug("Gutenberg fetch error (%s): %s", book.get("id", "?"), str(e)[:80])
             continue
     return None
 
@@ -105,6 +107,7 @@ def harvest_gutenberg(targets: Optional[list[str]] = None,
         if not books:
             continue
 
+        n_found = 0
         for book in books[:2]:
             bid = str(book.get("id", ""))
             if bid in loaded_ids:
@@ -136,7 +139,11 @@ def harvest_gutenberg(targets: Optional[list[str]] = None,
                 })
 
             if chunks:
-                logger.info("GB: '%s' (%s) → %d chunks", title, authors, len(chunks))
+                n_found += len(chunks)
             time.sleep(1.5)
+
+        if n_found:
+            logger.info("GB: '%s' → %d chunks aus %d Büchern", query, n_found,
+                        len([b for b in books[:2] if str(b.get("id")) in loaded_ids]))
 
     return all_docs
