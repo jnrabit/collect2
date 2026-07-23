@@ -219,7 +219,22 @@ def synthesize(state: dict) -> tuple[str, dict]:
     elif "llm" in expected and not planning:
         parts.append("⚠️ Keine LLM-Antwort erhalten (Timeout).")
 
-    # 3. Quellen-Fußzeile
+    # 3. Quellen — strukturiert für Frontend (aufklappbar) + Footer-Text
+    source_list: list[dict] = []
+    for kind, label in [("retrieval", "general"), ("code_retrieval", "code"), ("web", "web")]:
+        contrib = contribs.get(kind)
+        if not contrib:
+            continue
+        for h in contrib.get("hits", [])[:8]:
+            source_list.append({
+                "doc_id": str(h.get("doc_id", "")),
+                "title": str(h.get("title", ""))[:120],
+                "source": str(h.get("source", "")),
+                "kind": label,
+                "distance": round(float(h.get("distance", 0)), 1) if h.get("distance") else None,
+            })
+    meta["sources"] = source_list
+
     footer = []
     if has_file:
         paths = file_contrib.get("paths", [])

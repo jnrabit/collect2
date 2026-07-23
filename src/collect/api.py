@@ -146,6 +146,30 @@ def create_app():
             for t in rows
         ]}
 
+    @app.get("/api/vault/doc/{doc_id}")
+    def vault_doc(doc_id: str, _auth=Depends(require_auth("light"))):
+        """Einzelnes Vault-Dokument (General + Code + Web-Fallback).
+        Leicht: nur Vault-Lookup, kein LLM. Frontend ruft auf bei Quellen-Klick."""
+        from collect.retrieval.store import VaultStore
+        from collect.retrieval.vault import Vault
+
+        stores = [
+            ("general", VaultStore(settings.knowledge_vault_file, settings.knowledge_cache_file)),
+            ("code", VaultStore(settings.code_vault_file, settings.code_cache_file)),
+        ]
+        for vault_kind, store in stores:
+            doc = store.get_doc(doc_id)
+            if doc:
+                return {
+                    "doc_id": str(doc_id),
+                    "vault": vault_kind,
+                    "title": str(doc.get("title", "")),
+                    "source": str(doc.get("source", "")),
+                    "content": str(doc.get("content", doc.get("text", "")))[:3000],
+                    "timestamp": str(doc.get("timestamp", "")),
+                }
+        raise HTTPException(status_code=404, detail=f"Doc {doc_id} nicht gefunden")
+
     @app.get("/api/sessions")
     def list_sessions(_auth=Depends(require_auth("light"))):
         if not settings.session_enabled:
