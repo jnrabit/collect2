@@ -65,6 +65,7 @@
     display: none;
   }
   .bot .src-card.open { display: block; }
+  .src-list { font-size: 13px; color: var(--dim); margin-top: 8px; line-height: 1.8; }
   .bot .src-card em { color: var(--dim); font-style: normal; }
   .meta { font-size: 12px; color: var(--dim); margin-top: 8px; }
   .progress {
@@ -225,7 +226,7 @@ function connect() {
       streamEl = null;
       renderAnswer(d, m.data.text || "(leer)");
       const meta = m.data.meta || {};
-      if (meta.sources && meta.sources.length) wireSources(d, meta.sources);
+      buildSourceList(d, meta.sources || []);
       if (meta.zone) {
         const info = document.createElement("div");
         info.className = "meta";
@@ -259,48 +260,33 @@ form.addEventListener("submit", (e) => {
   ws.send(JSON.stringify({ query: p ? `[${p}] ${q}` : q }));
 });
 
-// ── Quellen-Einblendung ──────────────────────────────────────────────────────
+// ── Quellen-Liste unter der Antwort ──────────────────────────────────────────
 
-function wireSources(botEl, sources) {
-  // Findet [N]-Referenzen im gerenderten HTML, ersetzt sie durch klickbare
-  // Spans. Bei Klick: /api/vault/doc/{doc_id} laden und unter der Referenz
-  // als aufklappbare Karte anzeigen.
-  const walker = document.createTreeWalker(botEl, NodeFilter.SHOW_TEXT);
-  const textNodes = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode);
+function buildSourceList(botEl, sources) {
+  if (!sources.length) return;
+  const wrapper = document.createElement("div");
+  wrapper.className = "src-list";
+  wrapper.innerHTML = "<em>Quellen:</em> ";
 
-  const re = /\[(\d+)\]/g;
-  for (const tn of textNodes) {
-    let text = tn.textContent;
-    if (!text || !re.test(text)) continue;
-    re.lastIndex = 0;
-
-    const frag = document.createDocumentFragment();
-    let last = 0;
-    for (let m; (m = re.exec(text)) !== null;) {
-      const idx = parseInt(m[1], 10) - 1;
-      const src = sources[idx];
-      if (last < m.index) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-      const span = document.createElement("span");
-      span.className = "src-ref";
-      span.textContent = `[${m[1]}]`;
-      if (src) {
-        const title = src.title || src.doc_id || "";
-        span.title = title;
-        span.addEventListener("click", () => toggleSourceCard(span, src));
-      }
-      frag.appendChild(span);
-      last = re.lastIndex;
-    }
-    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-    tn.parentNode.replaceChild(frag, tn);
-  }
+  const seen = new Set();
+  sources.forEach((src, i) => {
+    if (seen.has(src.doc_id)) return;
+    seen.add(src.doc_id);
+    const tag = {general:"📚", code:"💻", web:"🌐"}[src.kind] || "📄";
+    const ref = document.createElement("span");
+    ref.className = "src-ref";
+    ref.textContent = `[${tag} ${src.title || src.doc_id || "Q"+(i+1)}] `.slice(0, 80);
+    ref.title = src.doc_id || "";
+    ref.addEventListener("click", () => toggleSourceCard(ref, src));
+    wrapper.appendChild(ref);
+  });
+  botEl.appendChild(wrapper);
 }
 
 function toggleSourceCard(refEl, src) {
   const existing = refEl.parentNode.querySelector(".src-card[data-docid='" + src.doc_id + "']");
   if (existing) {
-    existing.classList.toggle("open");
+    existing.remove();
     return;
   }
   const card = document.createElement("div");
@@ -308,24 +294,22 @@ function toggleSourceCard(refEl, src) {
   card.dataset.docid = src.doc_id;
   card.innerHTML = "<em>lädt…</em>";
   refEl.after(card);
+  card.classList.add("open");
 
   const tok = apiToken();
   const hdr = tok ? { "Authorization": "Bearer " + tok } : {};
   fetch(`/api/vault/doc/${encodeURIComponent(src.doc_id)}`, { headers: hdr })
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(doc => {
-      const kind = src.kind === "web" ? "🌐" : src.kind === "code" ? "💻" : "📚";
       card.innerHTML =
         `<strong>${escapeHtml(doc.title || src.title || "Quelle")}</strong>` +
         (doc.source ? ` <em>(${escapeHtml(doc.source)})</em>` : "") +
         `<br><br>${escapeHtml((doc.content || "").substring(0, 2500))}`;
-      card.classList.add("open");
     })
     .catch(() => {
-      card.classList.add("open");
-      card.innerHTML = `<em>Quelle nicht im Vault</em><br><br>` +
-        `<strong>${escapeHtml(src.title || "")}</strong> ` +
-        `<em>(${escapeHtml(src.source || src.kind || "")})</em>`;
+      card.innerHTML = `<em>Quelle im Vault nicht abrufbar</em><br><br>` +
+        `<strong>${escapeHtml(src.title || "")}</strong>` +
+        (src.source ? ` — ${escapeHtml(src.source)}` : "");
     });
 }
 
