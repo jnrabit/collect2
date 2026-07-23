@@ -159,6 +159,12 @@ def create_app():
         ]
         for vault_kind, store in stores:
             doc = store.get_doc(doc_id)
+            if not doc:
+                # Fallback: Suche über den gesamten Index (ID könnte in altem Format vorliegen)
+                for did, d in store._doc_index.items():
+                    if str(did) == str(doc_id):
+                        doc = d
+                        break
             if doc:
                 return {
                     "doc_id": str(doc_id),
