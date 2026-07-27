@@ -29,8 +29,13 @@ from typing import Optional
 import numpy as np
 
 from collect.config import settings
+from collect.retrieval.zones import classify_zone
 
 logger = logging.getLogger(__name__)
+
+# Kein Zonen-Urteil, weil der Vault für diese Query gar nicht durchsucht wurde
+# (Router schickte sie nur an den anderen Vault). Bewusst KEIN FALLBACK.
+ZONE_NOT_QUERIED = "NICHT_ABGEFRAGT"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -163,6 +168,8 @@ class DistillationEntry:
     doc_ids: list[str] = field(default_factory=list)
     best_distance: Optional[float] = None
     zone: str = ""
+    code_zone: str = ""
+    hit_spread: Optional[float] = None
     route: str = ""
     route_score: float = 0.0
     general_hits: int = 0
@@ -175,12 +182,42 @@ class DistillationEntry:
             "doc_ids": self.doc_ids,
             "best_distance": self.best_distance,
             "zone": self.zone,
+            "code_zone": self.code_zone,
+            "hit_spread": self.hit_spread,
             "route": self.route,
             "route_score": self.route_score,
             "general_hits": self.general_hits,
             "code_hits": self.code_hits,
             "timestamp": self.timestamp or datetime.now(timezone.utc).isoformat(),
         }
+
+
+def _zone_of(vault_result) -> str:
+    """Zone eines VaultResult — mit ehrlichem Sentinel für 'nicht abgefragt'.
+
+    Vorher stand hier bei route=code schlicht "" für den General-Vault. Das
+    kollabierte zwei verschiedene Sachverhalte: "nicht durchsucht" und
+    "durchsucht, kein Urteil". FALLBACK wäre hier falsch — es behauptete eine
+    Messung, die nie stattgefunden hat.
+    """
+    if vault_result is None:
+        return ZONE_NOT_QUERIED
+    if vault_result.verdict is not None:
+        return vault_result.verdict.zone
+    return classify_zone(vault_result.best_distance).zone
+
+
+def _hit_spread(vault_result) -> Optional[float]:
+    """Distanz-Streuung (max-min) über die Treffer einer Query.
+
+    Das Widerspruchs-Maß des DreamCycle: liegen die Treffer weit auseinander,
+    beantwortet der Vault dieselbe Frage uneinheitlich. Unter 2 Treffern gibt
+    es nichts zu vergleichen → None (nicht 0.0, das hieße 'einig').
+    """
+    if vault_result is None or len(vault_result.hits) < 2:
+        return None
+    distances = [h.distance for h in vault_result.hits]
+    return round(max(distances) - min(distances), 3)
 
 
 class DistillationRecorder:
@@ -290,7 +327,9 @@ class Autopilot:
                 query=query,
                 doc_ids=[h.doc_id for h in (result.general.hits if result.general else [])],
                 best_distance=result.general.best_distance if result.general else None,
-                zone=result.general.verdict.zone if result.general and result.general.verdict else "",
+                zone=_zone_of(result.general),
+                code_zone=_zone_of(result.code),
+                hit_spread=_hit_spread(result.general),
                 route=result.route,
                 route_score=result.route_score,
                 general_hits=len(result.general.hits) if result.general else 0,
