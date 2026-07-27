@@ -52,6 +52,14 @@ class CollectSettings(BaseSettings):
     code_field_file: Optional[Path] = None        # default: data_dir/code_resonance_field.pkl
     code_centroid_file: Optional[Path] = None     # default: data_dir/code_centroid.npy
 
+    ingest_keep_backups: int = Field(
+        default=3,
+        ge=1,
+        description="Rollback-Punkte pro Vault-Datei, die ein Ingest behält. "
+                    "Jeder Ingest legt Archiv + Cache voll ab (~490 MB beim "
+                    "General-Vault) — ohne Rotation läuft data/ voll.",
+    )
+
     # ── Redis ────────────────────────────────────────────────────────────
     redis_host: str = "localhost"
     redis_port: int = 6379

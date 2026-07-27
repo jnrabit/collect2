@@ -7,9 +7,14 @@ Vault-Writes sind heikel (259k Docs, 416 MB Cache). Deshalb NIE in-place:
   4. Schreiben nach *.tmp
   5. Verify durch Wiederladen (Doc-Count + Stichproben-Roundtrip + Cache-Keys)
   6. erst dann atomarer os.replace
+  7. Backup-Rotation: älteste *.bak-<ts> löschen (settings.ingest_keep_backups)
 
 Rollback: die *.bak-<ts>-Dateien zurückkopieren (Pfade im Ergebnis benannt);
 zusätzlich liegt der Ur-Stand unter ~/collect/data (Migrationsquelle).
+
+Die Rotation läuft bewusst NACH dem Commit: schlägt der Write fehl, bleiben
+alle bisherigen Rollback-Punkte erhalten. Sie kann den Ingest auch nicht mehr
+scheitern lassen — zu dem Zeitpunkt ist der Vault bereits sicher geschrieben.
 """
 
 from __future__ import annotations
@@ -55,6 +60,7 @@ class IngestResult:
     skipped_quality: int = 0
     total_after: int = 0
     backups: list = field(default_factory=list)
+    pruned_backups: int = 0
     committed: bool = False
     error: str = ""
     by_source_new: dict = field(default_factory=dict)
@@ -81,6 +87,8 @@ class IngestResult:
                         parts.append(f"{tag}{d}dupe")
                 base += " | " + " ".join(parts)
             base += f"\n  Backups: {', '.join(Path(b).name for b in self.backups)}"
+            if self.pruned_backups:
+                base += f" (+{self.pruned_backups} alte rotiert)"
         return base
 
 
@@ -208,3 +216,37 @@ class VaultIngest:
         tmp_vault.replace(self.vault_file)
         tmp_cache.replace(self.cache_file)
         logger.info("Vault committet: %d Docs, %d Vektoren", len(archive), len(cache))
+
+        # 5. Rotation — erst jetzt, der Commit ist durch. Darf nie werfen.
+        keep = settings.ingest_keep_backups
+        for path in (self.vault_file, self.cache_file):
+            try:
+                res.pruned_backups += _rotate_backups(path, keep)
+            except Exception:
+                logger.warning("Backup-Rotation für %s fehlgeschlagen "
+                               "(Vault ist committet)", path.name, exc_info=True)
+
+
+def _rotate_backups(path: Path, keep: int) -> int:
+    """Löscht alle bis auf die `keep` jüngsten *.bak-<ts> neben `path`.
+
+    Sortiert nach dem Zeitstempel IM NAMEN, nicht nach mtime: ein Kopieren
+    oder Restore verschiebt die mtime, der Name bleibt die Wahrheit darüber,
+    welchen Vault-Stand ein Backup enthält.
+    """
+    if keep < 1:
+        raise ValueError(f"keep muss >= 1 sein, war {keep}")
+
+    dated: list[tuple[int, Path]] = []
+    for bak in path.parent.glob(path.name + ".bak-*"):
+        suffix = bak.name.rsplit(".bak-", 1)[-1]
+        if not suffix.isdigit():
+            continue  # fremde Datei — nicht anfassen
+        dated.append((int(suffix), bak))
+
+    pruned = 0
+    for _, bak in sorted(dated, reverse=True)[keep:]:
+        bak.unlink(missing_ok=True)
+        logger.info("Backup rotiert: %s", bak.name)
+        pruned += 1
+    return pruned

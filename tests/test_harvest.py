@@ -8,6 +8,7 @@ import pytest
 from collect.harvest.ingest import (
     IngestResult,
     VaultIngest,
+    _rotate_backups,
     content_hash,
     looks_latin,
 )
@@ -120,6 +121,101 @@ def test_verify_failure_aborts_without_touching_vault(seeded, monkeypatch):
     # Echter Vault unangetastet (nur tmp/bak berührt)
     monkeypatch.setattr(mod.Vault, "load", real_load)
     assert {d["id"] for d in Vault(vault_file).load()} == {d["id"] for d in orig}
+
+
+# ── Backup-Rotation ──────────────────────────────────────────────────────
+
+def _mk_baks(path, timestamps):
+    """Legt <path>.bak-<ts> für jedes ts an; Inhalt = der ts."""
+    for ts in timestamps:
+        path.with_suffix(path.suffix + f".bak-{ts}").write_text(str(ts))
+
+
+def test_rotate_keeps_newest_by_name_timestamp(tmp_path):
+    vault_file = tmp_path / "vault.monolith"
+    vault_file.write_text("live")
+    # mtime-Reihenfolge absichtlich GEGEN die Namens-Reihenfolge
+    _mk_baks(vault_file, [500, 100, 400, 200, 300])
+
+    assert _rotate_backups(vault_file, keep=2) == 3
+    assert {p.name for p in tmp_path.glob("vault.monolith.bak-*")} == {
+        "vault.monolith.bak-500", "vault.monolith.bak-400"}
+    assert vault_file.read_text() == "live"      # Live-Datei unangetastet
+
+
+def test_rotate_noop_when_under_limit(tmp_path):
+    vault_file = tmp_path / "vault.monolith"
+    vault_file.write_text("live")
+    _mk_baks(vault_file, [100, 200])
+    assert _rotate_backups(vault_file, keep=5) == 0
+    assert len(list(tmp_path.glob("vault.monolith.bak-*"))) == 2
+
+
+def test_rotate_ignores_foreign_and_other_vault_files(tmp_path):
+    vault_file = tmp_path / "vault.monolith"
+    cache_file = tmp_path / "cache.pkl"
+    vault_file.write_text("live")
+    cache_file.write_text("cache")
+    _mk_baks(vault_file, [100, 200, 300])
+    _mk_baks(cache_file, [100, 200, 300])          # andere Familie
+    (tmp_path / "vault.monolith.bak-manuell").write_text("von Hand")
+
+    assert _rotate_backups(vault_file, keep=1) == 2
+    # Nur die eigene Familie rotiert
+    assert len(list(tmp_path.glob("cache.pkl.bak-*"))) == 3
+    # Nicht-numerischer Suffix wird nicht angefasst
+    assert (tmp_path / "vault.monolith.bak-manuell").exists()
+    assert cache_file.exists() and vault_file.exists()
+
+
+def test_rotate_rejects_keep_below_one(tmp_path):
+    vault_file = tmp_path / "vault.monolith"
+    vault_file.write_text("live")
+    _mk_baks(vault_file, [100])
+    with pytest.raises(ValueError):
+        _rotate_backups(vault_file, keep=0)
+    assert len(list(tmp_path.glob("vault.monolith.bak-*"))) == 1
+
+
+def test_ingest_rotates_old_backups(seeded, monkeypatch):
+    ingest, vault_file, cache_file = seeded
+    import collect.harvest.ingest as mod
+    monkeypatch.setattr(mod.settings, "ingest_keep_backups", 2)
+
+    # Jeder Ingest braucht einen eigenen Zeitstempel, sonst kollidieren die Namen
+    clock = iter(range(1000, 1010))
+    monkeypatch.setattr(mod.time, "time", lambda: next(clock))
+
+    for i in range(2, 6):                     # vier Ingests
+        assert ingest.ingest([_doc(i)]).committed
+
+    for base in (vault_file, cache_file):
+        baks = sorted(p.name for p in base.parent.glob(base.name + ".bak-*"))
+        assert len(baks) == 2, baks
+    assert len(Vault(vault_file).load()) == 6      # Vault vollständig
+
+
+def test_failed_write_keeps_all_backups(seeded, monkeypatch):
+    """Rotation läuft nach dem Commit — ein Abbruch darf keine Rollback-Punkte kosten."""
+    ingest, vault_file, _ = seeded
+    import collect.harvest.ingest as mod
+    monkeypatch.setattr(mod.settings, "ingest_keep_backups", 1)
+    _mk_baks(vault_file, [100, 200, 300])
+
+    real_load = mod.Vault.load
+    calls = {"n": 0}
+
+    def flaky_load(self):
+        calls["n"] += 1
+        docs = real_load(self)
+        return docs[:-1] if calls["n"] >= 2 else docs
+
+    monkeypatch.setattr(mod.Vault, "load", flaky_load)
+    res = ingest.ingest([_doc(2)])
+    assert res.committed is False and res.pruned_backups == 0
+    # Die drei alten Rollback-Punkte stehen noch
+    for ts in (100, 200, 300):
+        assert (vault_file.parent / f"{vault_file.name}.bak-{ts}").exists()
 
 
 # ── Helfer ───────────────────────────────────────────────────────────────
