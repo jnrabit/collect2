@@ -238,8 +238,26 @@ class DreamCycle:
     # ── Dialektik ─────────────────────────────────────────────────────────────
 
     def _load_contradictions(self) -> list[dict]:
+        """Widerspruch = hohe Distanz-Streuung über die Treffer einer Query.
+
+        Vorher galt zone == "FALLBACK" als Widerspruch. Das war strukturell
+        unerreichbar: der Autopilot extrahiert seine Queries AUS Vault-Docs,
+        findet also immer mindestens das Seed-Dokument (gemessenes Maximum
+        59.4 gegen eine FALLBACK-Schwelle von 62.0). Und selbst wenn — ein
+        FALLBACK-Eintrag hat per Definition kaum doc_ids, die _select_batch
+        für die Synthese braucht. Die beiden Kriterien arbeiteten gegeneinander.
+
+        Streuung dreht das um: sie verlangt viele Treffer, die untereinander
+        uneinig sind. Das ist näher am Original (~/collect/dream.py:92,
+        comparison.agreement < 0.35) und liefert der Dialektik genau das
+        Material, das sie zum Synthetisieren braucht.
+
+        Einträge ohne hit_spread (vor dieser Änderung geschrieben, oder unter
+        2 Treffern) werden übersprungen — für sie gibt es keine Messung.
+        """
         if not self._dist_file.exists():
             return []
+        threshold = settings.dream_min_hit_spread
         contradictions = []
         with open(self._dist_file, encoding="utf-8") as f:
             for line in f:
@@ -247,10 +265,10 @@ class DreamCycle:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                # In collect2 vereinfacht: zone=FALLBACK → Widerspruch
-                # (kein comparison.agreement-Feld im DistillationEntry)
-                zone = entry.get("zone", "")
-                if zone == "FALLBACK":
+                spread = entry.get("hit_spread")
+                if not isinstance(spread, (int, float)):
+                    continue
+                if spread >= threshold:
                     contradictions.append(entry)
         return contradictions
 

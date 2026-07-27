@@ -30,20 +30,40 @@ def _dream(tmp_path, lines, archive=None, resonance=None):
 
 # ── Widerspruchs-Parsing ─────────────────────────────────────────────────
 
-def test_load_contradictions_reads_fallback_entries(tmp_path):
+def test_load_contradictions_selects_by_hit_spread(tmp_path, monkeypatch):
+    import collect.retrieval.dream as mod
+    monkeypatch.setattr(mod.settings, "dream_min_hit_spread", 10.0)
     lines = [
-        json.dumps({"zone": "FALLBACK", "query": "Was ist Zeit?"}),
-        json.dumps({"zone": "TRUST", "query": "Was ist HTTP?"}),
-        json.dumps({"zone": "FALLBACK", "query": "Was ist Bewusstsein?"}),
+        json.dumps({"hit_spread": 14.2, "query": "weit auseinander"}),
+        json.dumps({"hit_spread": 6.6, "query": "einig"}),
+        json.dumps({"hit_spread": 10.0, "query": "genau auf der Schwelle"}),
     ]
     got = _dream(tmp_path, lines)._load_contradictions()
-    assert [e["query"] for e in got] == ["Was ist Zeit?", "Was ist Bewusstsein?"]
+    assert [e["query"] for e in got] == ["weit auseinander", "genau auf der Schwelle"]
+
+
+def test_load_contradictions_ignores_entries_without_spread(tmp_path):
+    """Altbestand (vor der Umstellung) und Queries mit <2 Treffern haben keine
+    Messung — die dürfen nicht als Widerspruch durchgehen."""
+    lines = [
+        json.dumps({"zone": "FALLBACK", "query": "alter Eintrag"}),   # kein Feld
+        json.dumps({"hit_spread": None, "query": "zu wenige Treffer"}),
+        json.dumps({"hit_spread": "viel", "query": "kaputter Typ"}),
+    ]
+    assert _dream(tmp_path, lines)._load_contradictions() == []
+
+
+def test_load_contradictions_no_longer_keys_on_fallback_zone(tmp_path):
+    """Regression: zone=FALLBACK war das alte, strukturell unerreichbare
+    Kriterium. Es darf allein nichts mehr auslösen."""
+    lines = [json.dumps({"zone": "FALLBACK", "hit_spread": 2.0, "query": "x"})]
+    assert _dream(tmp_path, lines)._load_contradictions() == []
 
 
 def test_load_contradictions_skips_malformed_lines(tmp_path):
     lines = [
         "{kein valides json",
-        json.dumps({"zone": "FALLBACK", "query": "ok"}),
+        json.dumps({"hit_spread": 99.0, "query": "ok"}),
         "",
     ]
     got = _dream(tmp_path, lines)._load_contradictions()
@@ -53,11 +73,6 @@ def test_load_contradictions_skips_malformed_lines(tmp_path):
 def test_load_contradictions_empty_without_file(tmp_path):
     dream = DreamCycle(_searcher(), distillation_file=tmp_path / "fehlt.jsonl")
     assert dream._load_contradictions() == []
-
-
-def test_load_contradictions_empty_when_no_fallback(tmp_path):
-    lines = [json.dumps({"zone": "TRUST", "query": "x"})]
-    assert _dream(tmp_path, lines)._load_contradictions() == []
 
 
 # ── Apoptose ─────────────────────────────────────────────────────────────
@@ -104,7 +119,7 @@ def test_apoptose_without_resonance_field_is_noop_on_ids(tmp_path):
 
 def test_run_survives_nonempty_distillation_file(tmp_path):
     """run() bis zur Synthese: darf nicht mehr an fehlendem json-Import sterben."""
-    lines = [json.dumps({"zone": "TRUST", "query": "kein Widerspruch"})]
+    lines = [json.dumps({"hit_spread": 1.0, "query": "kein Widerspruch"})]
     archive = [_normal(0), _meta(1)]
     dream = _dream(tmp_path, lines, archive=archive, resonance={})
 

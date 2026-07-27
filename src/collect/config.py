@@ -519,6 +519,19 @@ class CollectSettings(BaseSettings):
     observe_autopilot_cycles: int = Field(
         default=500, description="Autopilot: max Zyklen (0=endlos)")
 
+    # ── DreamCycle (Widerspruchs-Kriterium) ─────────────────────────────
+    dream_min_hit_spread: float = Field(
+        default=14.0,
+        gt=0,
+        description="Ab welcher Distanz-Streuung (max-min über die Treffer "
+                    "einer Query) der Vault als widersprüchlich gilt. Gemessen "
+                    "über 191 reale Autopilot-Queries gegen den 260k-Vault: "
+                    "Median 6.8, p90 12.2, p95 13.7, max 30.7. 14.0 greift "
+                    "damit die obersten ~4% ab. Niedriger = mehr Kandidaten "
+                    "(10.0 → 19%, 12.0 → 11%); _select_batch synthetisiert "
+                    "ohnehin nur batch_size Stück pro Lauf.",
+    )
+
     # ── Timeouts ────────────────────────────────────────────────────────
     query_timeout: float = 180.0
     retrieval_timeout: float = 8.0
