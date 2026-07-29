@@ -26,6 +26,52 @@ _STOP_SEQUENCES = ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
 _NUM_PREDICT_CAP = settings.llm_num_predict
 
 
+#: Provenienz-Cache: EIN /api/show je Modell und Prozess. Ohne Cache waere das
+#: ein blockierender Zusatz-Request pro Trace — mit Cache einer beim ersten
+#: Aufruf. Auch Fehlschlaege werden gecacht (kein Retry-Sturm).
+_provenance_cache: dict[str, dict] = {}
+
+DRIVER = "ollama"
+
+
+def model_provenance(model: Optional[str] = None) -> dict:
+    """{model, model_digest, quant, driver} — WER hat den Trace erzeugt.
+
+    Wirft NIE: was nicht ermittelbar ist, bleibt None. Ein unvollstaendig
+    beschrifteter Trace ist besser als ein gebrochener Agenten-Aufruf.
+
+    Warum auch der Treiber: dasselbe Modell liefert ueber verschiedene Treiber
+    verschiedene Ergebnisse (gemessen: 17/24 in transformers-fp16 gegen 13/24
+    in ollama-q4 beim GLEICHEN Modell). Ein Bestand, der ueber einen
+    Treiberwechsel hinweg ausgewertet wird, ist ohne dieses Feld irrefuehrend.
+    """
+    name = model or settings.main_model
+    if name in _provenance_cache:
+        return dict(_provenance_cache[name])
+    prov = {"model": name, "model_digest": None, "quant": None, "driver": DRIVER}
+    try:
+        resp = requests.post(f"{settings.ollama_url}/api/show",
+                             json={"model": name}, timeout=5.0)
+        resp.raise_for_status()
+        prov["quant"] = (resp.json().get("details") or {}).get("quantization_level")
+    except Exception as e:  # noqa: BLE001 — Provenienz darf nie den Pfad brechen
+        logger.debug("Quant fuer %s nicht ermittelbar: %s", name, e)
+    try:
+        # Der Digest steht nur in /api/tags, nicht in /api/show. Er ist das
+        # eigentlich harte Identitaetsmerkmal: der Tag kann auf neue Gewichte
+        # umgebogen werden, der Digest nicht.
+        tags = requests.get(f"{settings.ollama_url}/api/tags", timeout=5.0)
+        tags.raise_for_status()
+        for m in tags.json().get("models", []):
+            if name in (m.get("name"), m.get("model")):
+                prov["model_digest"] = m.get("digest")
+                break
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Digest fuer %s nicht ermittelbar: %s", name, e)
+    _provenance_cache[name] = dict(prov)
+    return dict(prov)
+
+
 def _base_options(temperature: float) -> dict:
     return {
         "temperature": temperature,

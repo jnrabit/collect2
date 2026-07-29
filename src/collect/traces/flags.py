@@ -161,14 +161,24 @@ def gesichtet_ids(flags: Iterable[dict]) -> set[str]:
 
 
 def _modell(trace: dict) -> str:
-    """Modell aus dem Trace-Meta. Der Collector schreibt es derzeit NICHT mit —
-    dann 'unbekannt'. Getrennte Ausweisung ist Pflicht, weil 3b-Rewrites und
-    C-Schritte nicht dieselbe Verteilung sind."""
+    """Provenienz-Schluessel: `modell @treiber (quant)`.
+
+    Getrennte Ausweisung ist Pflicht, weil 3b-Rewrites und Schritte eines
+    staerkeren Modells nicht dieselbe Verteilung sind — UND weil derselbe
+    Modellname ueber einen anderen Treiber ein anderes Ergebnis liefert
+    (gemessen: 17/24 transformers-fp16 gegen 13/24 ollama-q4, gleiches Modell).
+    Altbestand ohne diese Felder bleibt 'unbekannt': nichts wird geraten.
+    """
     meta = trace.get("meta", {})
-    for key in ("model", "modell", "llm_model"):
-        if meta.get(key):
-            return str(meta[key])
-    return "unbekannt (nicht mitgeschrieben)"
+    name = meta.get("model") or meta.get("modell") or meta.get("llm_model")
+    if not name:
+        return "unbekannt (vor Provenienz-Feldern)"
+    teile = [str(name)]
+    if meta.get("driver"):
+        teile.append(f"@{meta['driver']}")
+    if meta.get("quant"):
+        teile.append(f"({meta['quant']})")
+    return " ".join(teile)
 
 
 def _leer_gruppe() -> dict:

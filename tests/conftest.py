@@ -11,6 +11,28 @@ from collect.retrieval.vault import Vault
 DIM = 384
 
 
+@pytest.fixture(autouse=True)
+def _traces_isoliert(tmp_path, monkeypatch):
+    """Testlaeufe schreiben NIE in den Produktiv-Trace-Bestand.
+
+    `traces_enabled` ist per Default an und `traces_dir` zeigt auf
+    ~/collect2/data/traces — jeder Test, der den Agenten-Pfad beruehrt, hat
+    dort bisher echte Trainingsdaten mit Fixtures verschmutzt (nachgewiesen:
+    18 eindeutige testerzeugte trace_ids im Bestand, davon mehrere NICHT von
+    echten Traces unterscheidbar). Diese Fixture leitet den Collector fuer
+    JEDEN Test in ein temporaeres Verzeichnis um.
+
+    autouse mit Absicht: die Verschmutzung entstand gerade dadurch, dass man
+    daran denken musste. Wer den Pfad gezielt testen will, patcht innerhalb
+    des Tests weiter — das ueberschreibt diese Umleitung.
+    """
+    from collect.traces import collector as _col
+    monkeypatch.setattr(_col.settings, "traces_dir", tmp_path / "traces")
+    monkeypatch.setattr(_col, "_collector", None)   # Singleton neu bauen lassen
+    yield
+    _col._collector = None                          # nicht in den naechsten Test lecken
+
+
 def fake_embedding(text: str) -> np.ndarray:
     """Deterministischer Pseudo-Embedder: gleicher Text → gleicher Vektor."""
     rng = np.random.RandomState(abs(hash(text)) % (2 ** 31))

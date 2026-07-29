@@ -80,13 +80,24 @@ müssen — sonst entscheidet man auf einer verschmutzten Zahl:
    (Targets `ok`, `ungeerdete Antwort`, `aaaa…`, Frage `q`), sämtlich
    `step_kind=answer`. Sie sind als `kein_trace` markierbar und zählen
    **nicht** in die Fehlerquote. **Jeder Trainingsbau muss sie ausschließen.**
-2. **Das Modell wird nicht mitgeschrieben.** Kein Trace enthält ein
-   `meta.model`; `stats` weist deshalb alles als
-   „unbekannt (nicht mitgeschrieben)" aus. Damit ist die vom Gate verlangte
-   **getrennte** Betrachtung (3b-Rewrites vs. C-Schritte) derzeit **nicht
-   möglich**. Der Collector wurde hier bewusst nicht geändert (Nicht-Ziel des
-   Auftrags) — das ist der nächste nötige Schritt, bevor die Inventur
-   entscheidungsreif wird.
+2. **Das Modell wurde nicht mitgeschrieben — behoben, wirkt aber erst ab
+   jetzt.** Neue Traces tragen `model`, `model_digest`, `quant` und `driver`;
+   `stats` schlüsselt danach auf. **Der Digest ist das harte Merkmal** (ein Tag
+   kann auf neue Gewichte umgebogen werden), **der Treiber ist gleichrangig
+   nötig**: dasselbe Modell lieferte über verschiedene Treiber 17/24
+   (transformers-fp16) gegen 13/24 (ollama-q4). Der **Altbestand bleibt
+   „unbekannt"** — es wird nichts nachträglich geraten.
+
+3. **Die Testfixtures kamen aus einem Leck, nicht aus Zufall.**
+   `traces_enabled` ist per Default an und `traces_dir` zeigt auf das
+   Produktivverzeichnis — jeder Test, der den Agenten-Pfad berührte, schrieb
+   dorthin (reproduziert: zwei Testdateien erzeugten 5 neue Zeilen).
+   Behoben durch eine `autouse`-Fixture in `tests/conftest.py`, die den
+   Collector für **jeden** Test in ein temporäres Verzeichnis umleitet.
+   Nachweislich testerzeugt sind **18 eindeutige trace_ids**; davon waren
+   mehrere **nicht** von echten Traces zu unterscheiden (realistische
+   TLS-/Spark-Rewrites) — genau deshalb sind die Provenienz-Felder nötig und
+   nicht bloß nützlich.
 
 ## Offener Punkt, der die Zahlen berührt
 

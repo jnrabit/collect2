@@ -223,3 +223,45 @@ def test_korpusdefekt_zaehlt_nicht_in_die_fehlerquote(tmp_path):
     assert agg["fehlerquote_prozent"] == 50.0
     # ausgewiesen wird die Klasse trotzdem
     assert {k["klasse"] for k in agg["klassen"]} == {"kein_trace", "register"}
+
+
+# ── Provenienz (Modell/Treiber/Quant) ────────────────────────────────────
+
+def test_provenienz_schluessel_nennt_treiber_und_quant(tmp_path):
+    """Modellname allein reicht nicht: derselbe Name ueber einen anderen
+    Treiber ist ein anderes Ergebnis (17/24 fp16 vs 13/24 q4)."""
+    t = _trace("t1")
+    t["meta"].update({"model": "qwen3:8b", "driver": "ollama", "quant": "Q4_K_M"})
+    F.write_flag("t1", "none", base_dir=tmp_path)
+    agg = F.aggregate([t], F.load_flags(tmp_path))
+    assert "qwen3:8b @ollama (Q4_K_M)" in agg["nach_modell"]
+
+
+def test_altbestand_bleibt_unbekannt_statt_geraten(tmp_path):
+    agg = F.aggregate([_trace("t1")], [])
+    assert "unbekannt" in next(iter(agg["nach_modell"]))
+
+
+def test_collector_schreibt_provenienz(tmp_path):
+    from collect.traces.collector import TraceCollector
+    c = TraceCollector(base_dir=tmp_path)
+    c.record("rewrite", [{"role": "system", "content": "s"},
+                         {"role": "user", "content": "u"},
+                         {"role": "assistant", "content": "a"}],
+             provenance={"model": "qwen3:8b", "driver": "ollama",
+                         "quant": "Q4_K_M", "model_digest": "abc123"})
+    m = c.load_all()[0]["meta"]
+    assert (m["model"], m["driver"], m["quant"], m["model_digest"]) == \
+           ("qwen3:8b", "ollama", "Q4_K_M", "abc123")
+
+
+def test_fehlende_provenienz_ist_none_keine_exception(tmp_path):
+    """Collector-Ausfall darf keinen Agenten-Aufruf brechen."""
+    from collect.traces.collector import TraceCollector
+    c = TraceCollector(base_dir=tmp_path)
+    tid = c.record("rewrite", [{"role": "system", "content": "s"},
+                               {"role": "user", "content": "u"},
+                               {"role": "assistant", "content": "a"}])
+    assert tid is not None
+    m = c.load_all()[0]["meta"]
+    assert m["model"] is None and m["driver"] is None

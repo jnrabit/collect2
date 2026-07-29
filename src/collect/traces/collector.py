@@ -54,13 +54,22 @@ class TraceCollector:
     def record(self, step_kind: str, messages: list[dict],
                tools: Optional[list[dict]] = None,
                workflow_id: str = "", step_index: int = 0,
-               extra: Optional[dict] = None) -> Optional[str]:
+               extra: Optional[dict] = None,
+               provenance: Optional[dict] = None) -> Optional[str]:
         """Schreibt einen Trace. Gibt trace_id zurück (oder None bei Fehler).
 
         Wirft NIE — der Agenten-Pfad ist heilig. tools=None → leeres tools-Feld
-        (der heutige deterministische Aufruf nutzte keine Tools)."""
+        (der heutige deterministische Aufruf nutzte keine Tools).
+
+        provenance: {model, model_digest, quant, driver} — wer den Trace
+        erzeugt hat. Fehlende Felder werden zu None, NIE zur Exception: ein
+        unvollstaendig beschrifteter Trace ist besser als ein gebrochener
+        Agenten-Aufruf. Nichts wird geraten — was nicht uebergeben wurde,
+        bleibt None.
+        """
         try:
             trace_id = make_trace_id(messages)
+            prov = provenance or {}
             entry = TraceEntry(
                 messages=messages,
                 tools=tools or [],
@@ -70,6 +79,10 @@ class TraceCollector:
                     timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
                     collect2_version=self._version,
                     tool_schema_hash=self._schema_hash,
+                    model=prov.get("model"),
+                    model_digest=prov.get("model_digest"),
+                    quant=prov.get("quant"),
+                    driver=prov.get("driver"),
                     extra=extra or {}),
             )
             with self._lock:

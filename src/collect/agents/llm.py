@@ -64,12 +64,16 @@ class LLMAgent(BaseAgent):
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": response.strip()},
         ]
+        try:    # Provenienz darf den Antwortpfad nie brechen
+            provenance = ollama.model_provenance()
+        except Exception:  # noqa: BLE001
+            provenance = {}
         record_if_enabled("answer", messages, extra={
             "zone": zone,
             "facts_used": len(facts or []),
             "has_file": bool(state["contribs"].get("file", {}).get("chunks")),
             "has_web": bool(web_contrib and web_contrib.get("count")),
-        })
+        }, provenance=provenance)
 
     _EARLY_TTL = 120.0  # Sek.: verwaiste Early-Beiträge (Request kam nie) verwerfen
     _EARLY_MAX = 256

@@ -103,6 +103,16 @@ class TraceMeta:
     outcome: str = "unknown"
     curated: bool = False
     synthetic: bool = False
+    # ── Provenienz: WER hat diesen Trace erzeugt ────────────────────────
+    # Ohne diese Felder ist ein Bestand nicht auswertbar: dasselbe Modell
+    # liefert ueber verschiedene Treiber verschiedene Ergebnisse (belegt:
+    # 17/24 in transformers-fp16 gegen 13/24 in ollama-q4 beim GLEICHEN
+    # Modell). Modelltrennung ohne Treibertrennung waere also nur die halbe
+    # Wahrheit. None = nicht mitgeschrieben (Altbestand) — NICHT geraten.
+    model: Optional[str] = None          # z. B. "qwen3:8b"
+    model_digest: Optional[str] = None   # Tag/Digest, identifiziert die Gewichte
+    quant: Optional[str] = None          # z. B. "Q4_K_M"
+    driver: Optional[str] = None         # "ollama" | "llama.cpp" | "k4n0n3" | …
     extra: dict = field(default_factory=dict)  # site-spezifische Zusatzinfos
 
     def to_dict(self) -> dict:

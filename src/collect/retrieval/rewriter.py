@@ -118,6 +118,25 @@ def rewrite(query: str, history: list,
             "applied": applied, "duration_ms": (time.time() - t0) * 1000}
 
 
+def _rewrite_provenance() -> dict:
+    """WER hat den Rewrite erzeugt — Modell UND Treiber.
+
+    Ohne diese Angabe ist ein Trace-Bestand nicht auswertbar: 3b-Rewrites und
+    Schritte eines staerkeren Modells sind nicht dieselbe Verteilung, und
+    derselbe Modellname ueber einen anderen Treiber ist ein anderes Ergebnis.
+    Wirft nie — der Rewrite ist wichtiger als sein Etikett.
+    """
+    try:
+        if settings.rewrite_k4n0n3_enabled:
+            return {"model": settings.k4n0n3_rewrite_model or settings.k4n0n3_model,
+                    "model_digest": None, "quant": None, "driver": "k4n0n3"}
+        from collect.agents import ollama
+        return ollama.model_provenance(
+            settings.rewrite_model or settings.decompose_model)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 # Trace-Einhängung (Auftrag: der Rewriter ist das primäre Verhaltensziel).
 # Nur mitschreiben, nie eingreifen — record_if_enabled ist no-op wenn aus und
 # wirft nie. step_kind="rewrite"; das Target ist die umgeschriebene Query.
@@ -164,6 +183,6 @@ def _record_rewrite_trace(prompt: str, rewritten: str) -> None:
             {"role": "system", "content": _REWRITE_TRACE_SYSTEM},
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": rewritten},
-        ])
+        ], provenance=_rewrite_provenance())
     except Exception:  # noqa: BLE001 — Tracing darf den Rewrite nie brechen
         pass
