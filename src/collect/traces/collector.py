@@ -109,7 +109,9 @@ class TraceCollector:
         if not self.base_dir.exists():
             return out
         for f in sorted(self.base_dir.glob("*.jsonl")):
-            if f.name in ("outcomes.jsonl", "validation_report.json"):
+            # Seitenkanaele sind keine Traces: outcomes (append-only Ergebnis)
+            # und flags (append-only Fehler-Inventur) liegen im selben Ordner.
+            if f.name in ("outcomes.jsonl", "flags.jsonl", "validation_report.json"):
                 continue
             for line in f.read_text(encoding="utf-8").splitlines():
                 if not line.strip():

@@ -17,7 +17,80 @@ _SITE_TO_KIND = {"llm": "answer", "decision": "answer",
 
 
 def cmd_stats(args) -> int:
-    print(json.dumps(get_collector().stats(), ensure_ascii=False, indent=2))
+    """Bestandszaehlung + Fehler-Inventur (Auftrag Fehler-Inventur).
+
+    Die Fehlerverteilung ist der Blick, der die Finetune-Entscheidung traegt —
+    Schwelle in docs/finetune_gate.md.
+    """
+    from collect.traces.flags import aggregate, load_flags
+    collector = get_collector()
+    basis = collector.stats()
+    agg = aggregate(collector.load_all(), load_flags())
+    if args.json:
+        print(json.dumps({**basis, "inventur": agg}, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"Traces gesamt:        {agg['total']}   "
+          f"(davon gesichtet: {agg['gesichtet']}, "
+          f"ungeflaggt/korrekt: {agg['korrekt']})")
+    if not agg["gesichtet"]:
+        print("\nNoch nichts gesichtet — 'collect-traces review' starten.")
+        print(f"step_kinds: {basis['step_kinds']}")
+        return 0
+    print(f"Fehlerquote:          {agg['fehlerhaft']}/{agg['gesichtet']} = "
+          f"{agg['fehlerquote_prozent']} %")
+    print("\nFehlerklassen (absteigend):")
+    if not agg["klassen"]:
+        print("  keine — alle gesichteten Schritte korrekt")
+    for k in agg["klassen"]:
+        print(f"  {k['klasse']:<18}{k['n']:>3}   {k['anteil_prozent']:>4} %   "
+              f"[Quelle: {k['quelle']}]")
+    print("\nNach step_kind:")
+    for kind, g in sorted(agg["nach_step_kind"].items()):
+        print(f"  {kind:<12} gesichtet {g['gesichtet']:>3}/{g['gesamt']:<4} "
+              f"fehlerhaft {g['fehlerhaft']}")
+    print("\nNach Modell (getrennt lesen — nicht dieselbe Verteilung):")
+    for modell, g in sorted(agg["nach_modell"].items()):
+        print(f"  {modell:<32} gesichtet {g['gesichtet']:>3}/{g['gesamt']:<4} "
+              f"fehlerhaft {g['fehlerhaft']}")
+    return 0
+
+
+def cmd_flag(args) -> int:
+    from collect.traces.flags import UnbekannteKlasse, write_flag
+    try:
+        row = write_flag(args.trace_id, args.klasse, note=args.note or "",
+                         flagger=args.flagger)
+    except UnbekannteKlasse as e:
+        print(f"Fehler: {e}")
+        return 2
+    except ValueError as e:
+        print(f"Fehler: {e}")
+        return 2
+    print(f"markiert: {row['trace_id']} → {row['klasse']}"
+          + (f"  ({row['note']})" if row["note"] else ""))
+    return 0
+
+
+def cmd_review(args) -> int:
+    from collect.traces.flags import load_flags
+    from collect.traces.review import review_loop
+    traces = get_collector().load_all()
+    if args.step_kind:
+        traces = [t for t in traces
+                  if t.get("meta", {}).get("step_kind") == args.step_kind]
+    if args.since:
+        traces = [t for t in traces
+                  if str(t.get("meta", {}).get("timestamp", "")) >= args.since]
+    if args.model:
+        traces = [t for t in traces
+                  if args.model in json.dumps(t.get("meta", {}), ensure_ascii=False)]
+    if not traces:
+        print("Keine Traces zum Filter.")
+        return 1
+    z = review_loop(traces, load_flags(), flagger=args.flagger)
+    print(f"\nGesichtet: {z['gesichtet']} (korrekt {z['korrekt']}, "
+          f"geflaggt {z['geflaggt']}), übersprungen {z['skip']}")
     return 0
 
 
@@ -128,7 +201,33 @@ def main() -> int:
                                  description="Trace-Pipeline für den WorkflowAgent-Finetune.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("stats", help="Zählung der gesammelten Traces").set_defaults(fn=cmd_stats)
+    ps = sub.add_parser("stats", help="Zählung + Fehlerverteilung der Inventur")
+    ps.add_argument("--json", action="store_true", help="maschinenlesbar")
+    ps.set_defaults(fn=cmd_stats)
+
+    from collect.traces.flags import FEHLERKLASSEN
+    klassen_hilfe = "\n".join(f"  {k:<18}{v}" for k, v in FEHLERKLASSEN.items())
+    pf = sub.add_parser(
+        "flag", help="einen Trace mit einer Fehlerklasse markieren",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"Fehlerklassen:\n{klassen_hilfe}\n  {'none':<18}"
+               f"hebt alle vorherigen Flags dieses Traces auf\n\n"
+               f"Rubrik mit Kalibrierbeispielen: docs/traces_fehlerklassen.md")
+    pf.add_argument("trace_id")
+    pf.add_argument("--class", dest="klasse", required=True,
+                    help="Fehlerklasse (siehe unten) oder 'none'")
+    pf.add_argument("--note", default="", help="Freitext; Pflicht bei 'sonstiges'")
+    pf.add_argument("--flagger", default="", help="wer urteilt (Default $USER)")
+    pf.set_defaults(fn=cmd_flag)
+
+    pr = sub.add_parser("review", help="ungesichtete Traces geführt durchgehen")
+    pr.add_argument("--since", default=None, help="nur ab Zeitstempel (ISO)")
+    pr.add_argument("--step-kind", default=None, help="nur diese Kategorie")
+    pr.add_argument("--model", default=None, help="nur Traces mit diesem Modell im meta")
+    pr.add_argument("--flagger", default="",
+                    help="wer urteilt (Default $USER) — Mensch und Assistent "
+                         "muessen spaeter trennbar sein")
+    pr.set_defaults(fn=cmd_review)
 
     pv = sub.add_parser("validate", help="Traces durchs echte Template prüfen")
     pv.add_argument("--tokenizer", default=None)
