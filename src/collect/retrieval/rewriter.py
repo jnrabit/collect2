@@ -170,9 +170,15 @@ def _default_generate_fn():
     from collect.agents import ollama
 
     def generate_fn(p, **kw):
+        # System-Prompt MITGEBEN: gemessen (2026-07-29, qwen3:8b, eval_hard
+        # Satz 1) 20/24 mit gegen 17/24 ohne — er kostet nichts und rettet drei
+        # Faelle. Bis hierher lief der Ollama-Pfad ohne, obwohl die Traces ihn
+        # protokollierten; der K4N0N3-Pfad gab ihn schon immer mit. Damit sind
+        # beide Pfade und die aufgezeichneten Traces endlich deckungsgleich.
         return ollama.generate(
-            p, model=settings.rewrite_model or settings.decompose_model,
-            timeout=15.0, temperature=0.0)
+            p, system=_REWRITE_TRACE_SYSTEM,
+            model=settings.rewrite_model or settings.decompose_model,
+            timeout=30.0, temperature=0.0)
     return generate_fn
 
 

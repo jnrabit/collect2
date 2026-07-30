@@ -370,8 +370,15 @@ class CollectSettings(BaseSettings):
                     "eigenständigen Fragen umformen (Follow-up-Retrieval)",
     )
     rewrite_model: str = Field(
-        default="",
-        description="Modell fürs Query-Rewrite; leer = decompose_model",
+        default="qwen3:8b",
+        description="Modell fürs Query-Rewrite; leer = decompose_model. "
+                    "qwen3:8b per Messung (BASISMODELL_BERICHT, 2026-07-29): "
+                    "20/24 gegen 15/24 von qwen2.5:3b auf demselben Treiber — "
+                    "und im echten Wechselbetrieb mit dem 7b-Antwortmodell "
+                    "SCHNELLER (12,1 s statt 21,2 s pro Folgefragen-Turn): der "
+                    "3b bleibt zwar geladen, bricht neben dem 7b aber auf "
+                    "~1 tok/s ein, der 8b verdrängt ihn sauber und rechnet "
+                    "voll auf der GPU.",
     )
     rewrite_max_content_terms: int = Field(
         default=6,
