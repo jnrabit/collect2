@@ -160,6 +160,11 @@ class VaultSearcher:
     def best_distance(merged: list[tuple]) -> Optional[float]:
         return min((dist for _, dist in merged), default=None)
 
+    def feedback_zone(self, zone: str) -> None:
+        """Non-Markovsches Cortex-Feedback aus der Zonen-Klassifikation.
+        TRUST → Cortex-Bias steigt → Exploitation. FALLBACK → Exploration."""
+        self.chaos.zone_feedback(zone)
+
     def hits(self, merged: list[tuple], max_hits: int) -> list[VaultHit]:
         out = []
         for doc_id, dist in merged[:max_hits]:
@@ -251,17 +256,19 @@ class RetrievalService:
         # die Reihenfolge (welche Docs den LLM-Prompt erden), nie die Zone.
         if route in (ROUTE_GENERAL, ROUTE_BOTH):
             merged = self.general.search(vecs, top_k, query_text=effective,
-                                         profile=profile)
+                                          profile=profile)
             result.general = VaultResult(hits=self.general.hits(merged, max_hits))
             result.general.verdict = classify_zone(VaultSearcher.best_distance(merged))
+            self.general.feedback_zone(result.general.verdict.zone)
 
         if route in (ROUTE_CODE, ROUTE_BOTH):
             merged = self.code.search(vecs, top_k, query_text=effective,
-                                      profile=profile)
+                                       profile=profile)
             result.code = VaultResult(hits=self.code.hits(merged, max_hits))
             result.code.verdict = classify_zone(
                 VaultSearcher.best_distance(merged),
                 trust_threshold=settings.code_vault_trust_threshold)
+            self.code.feedback_zone(result.code.verdict.zone)
 
         logger.info(
             "Retrieval: route=%s (%.3f) | general=%s | code=%s",

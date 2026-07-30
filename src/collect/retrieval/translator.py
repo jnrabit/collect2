@@ -22,6 +22,8 @@ from collect.config import settings
 
 logger = logging.getLogger(__name__)
 
+_MAX_CACHE_ENTRIES = 500
+
 _GERMAN_CHARS = set("äöüÄÖÜß")
 _GERMAN_STOPWORDS = {
     "der", "die", "das", "den", "dem", "des",
@@ -74,6 +76,14 @@ class QueryTranslator:
         if not self.enable_cache:
             return
         try:
+            # LRU-Cap: überzählige Einträge (älteste zuerst) entfernen
+            if len(self._cache) > _MAX_CACHE_ENTRIES:
+                sorted_keys = sorted(
+                    self._cache.keys(),
+                    key=lambda k: self._cache[k].get("saved_at", ""),
+                )
+                for key in sorted_keys[:_MAX_CACHE_ENTRIES // 2]:
+                    del self._cache[key]
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(
                 json.dumps(self._cache, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -85,6 +86,10 @@ class NativeEngine:
             return SHADOW_STATE.copy()
         data = (ctypes.c_float * 9)()
         self.lib.get_system_state(self.ctx, data)
+        if any(math.isnan(data[i]) or math.isinf(data[i]) for i in range(9)):
+            logger.error("Engine liefert NaN/Inf — Shadow Mode (Engine war divergiert)")
+            self.active = False
+            return SHADOW_STATE.copy()
         return {
             "x1": float(data[0]), "y1": float(data[1]),
             "z1": float(data[2]), "w1": float(data[3]),

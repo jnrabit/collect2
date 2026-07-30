@@ -155,11 +155,12 @@ class ChaosRetrieval:
         n = len(id_map)
         top_k = min(top_k, n)
 
-        lorenz_state, entropy = {}, 0.5
+        lorenz_state, entropy, cortex = {}, 0.5, 0.5
         if self.engine and self.engine.active:
             s = self.engine.get_hardware_state()
             lorenz_state = s
             entropy = min(1.0, s.get("entropy", 4.0) / 8.0)
+            cortex = s.get("cortex_bias", 0.5)
 
         use_warp = self.deterministic is False
         use_sample = not self.deterministic
@@ -217,7 +218,10 @@ class ChaosRetrieval:
                 res_arr = np.minimum(res_arr / (res_arr + 3.0), 0.5)
 
         if use_warp and self.deterministic is False:
-            exp_mode = entropy
+            # Cortex-Bias (0..1, 0.5=neutral) moduliert Exploration:
+            # niedrig = schlechte Historie → mehr Exploration (non-Markovsch).
+            memory_factor = 1.0 + (0.5 - cortex) * 1.5  # 0.25..1.75
+            exp_mode = entropy * memory_factor
             expl_mode = 1.0 - entropy
             ma, mb, mg, md = self._settings.retrieval_entropy_mix
             a = a * expl_mode + ma * exp_mode
@@ -270,6 +274,19 @@ class ChaosRetrieval:
         self.thompson.update(self._last_retrieved, set(relevant_ids))
         if self.engine:
             self.engine.apply_cortex_feedback(False)
+
+    def zone_feedback(self, zone: str) -> None:
+        """Non-Markovsches Cortex-Feedback aus der Zonen-Klassifikation.
+
+        TRUST → gute Retrieval-Historie → Cortex-Bias steigt → Exploitation.
+        FALLBACK → schlechte Historie → Bias sinkt → Exploration.
+        Der Bias akkumuliert über die Zeit — das ist das Gedächtnis."""
+        if not self.engine:
+            return
+        quality = {"TRUST": 0.9, "GRAY": 0.5, "FALLBACK": 0.1}.get(zone, 0.5)
+        self.engine.pulse((quality - 0.5) * 0.1)  # leichte Perturbation
+        self.engine.apply_cortex_feedback(quality < 0.4)
+        logger.debug("Zone-Feedback: %s → quality=%.2f", zone, quality)
 
     def diagnostics(self) -> dict:
         return {
