@@ -45,16 +45,19 @@ FEHLERKLASSEN: dict[str, str] = {
     "format": "Output-Format verletzt (mehrzeilig wo einzeilig gefordert, Geschwätz)",
     "multi_step": "Fehler entsteht erst im Zusammenspiel mehrerer Schritte",
     "konfabulation": "inhaltlich erfundene Aussage mit Sicherheitston",
+    "blindflug": "Agent legt Dateien an/ändert Code, ohne vorher die Zielstruktur "
+                 "zu lesen (kein ls/Read) — Dateien am falschen Ort, "
+                 "existierende Konventionen ignoriert, Code dupliziert",
     "kein_trace": "kein echter Modellausgang (Testfixture/Platzhalter im Bestand) "
                   "— Korpusdefekt, KEIN Modellfehler",
     "sonstiges": "passt in keine Klasse — Freitext (--note) Pflicht",
 }
 
-#: Klassen, die einen Defekt des BESTANDS bezeichnen, nicht des Modells. Sie
-#: zaehlen nicht in die Fehlerquote — sonst misst man die eigene Testdaten-
-#: Verschmutzung als Modellschwaeche und entscheidet den Finetune auf einer
-#: falschen Zahl.
-NICHT_MODELLFEHLER = frozenset({"kein_trace"})
+#: Klassen, die einen Defekt des BESTANDS oder des PROZESSES bezeichnen, nicht
+#: des Modells. Sie zaehlen nicht in die Fehlerquote — sonst misst man die
+#: eigene Testdaten-Verschmutzung oder Agent-Prozessfehler als Modellschwaeche
+#: und entscheidet den Finetune auf einer falschen Zahl.
+NICHT_MODELLFEHLER = frozenset({"kein_trace", "blindflug"})
 
 #: Klasse → existiert eine Quelle, die die Zielfähigkeit selbst beherrscht?
 #: Entscheidet im Gate mit, ob eine Klasse überhaupt antrainierbar ist
@@ -71,6 +74,7 @@ KLASSEN_QUELLE: dict[str, str] = {
     "format": "C beherrscht es",
     "multi_step": "ungeklärt — bis zum Beleg: nur Handarbeit",
     "konfabulation": "nur Handarbeit",
+    "blindflug": "prozessual — Workflow-Prompt-Regel adressiert es (Pre-Flight)",
     "kein_trace": "— (Korpusdefekt: ausschliessen, nicht lernen)",
     "sonstiges": "—",
 }

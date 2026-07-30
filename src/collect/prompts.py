@@ -88,7 +88,10 @@ _REGISTRY: dict[str, tuple[str, Optional[frozenset]]] = {
         '              "description": "was genau in dieser Datei passiert"}}]}}\n\n'
         "Regeln:\n"
         "- Maximal {max_files} Dateien, nur relative Pfade innerhalb des Repos.\n"
-        "- Zu JEDER neuen Funktionalität gehört eine Testdatei (tests/test_*.py, pytest).\n"
+        "- LIES ZUERST das Zielverzeichnis (ls <pfad>), bevor du Dateien anlegst — "
+        "wenn dort schon Code existiert, nutze die vorhandenen Konventionen.\n"
+        "- Zu JEDER neuen Funktionalität gehört eine Testdatei IM tests/-Verzeichnis "
+        "(tests/test_*.py, pytest). Testdateien NIE ins Projekt-Root ablegen.\n"
         "- Kein Text vor oder nach dem JSON.",
         frozenset({"task"})),
 

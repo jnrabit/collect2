@@ -95,7 +95,7 @@ def verdict_for(issues: List[dict]) -> str:
     """
     if any(i["kind"] == "symbol_loss" for i in issues):
         return "🔴"
-    if any(i["kind"] == "size_collapse" for i in issues):
+    if any(i["kind"] in ("size_collapse", "misplaced_test", "root_code") for i in issues):
         return "🟡"
     return "🟢"
 
@@ -116,7 +116,40 @@ def check_paths(changes: List[dict], plan_text: str = "") -> dict:
         except OSError:
             continue
         all_issues.extend(check_change(str(path), old, change.get("content", ""), plan_text))
+
+    # Misplaced-File-Check auch im programmatischen Pfad
+    all_paths = [c["path"] for c in changes]
+    all_issues.extend(_check_misplaced(all_paths))
+
     return {"verdict": verdict_for(all_issues), "issues": all_issues}
+
+
+def _check_misplaced(files: List[str]) -> List[dict]:
+    """Testdateien ausserhalb tests/ → Blindflug-Indiz. Root-.py (nicht src/) ebenso."""
+    issues: List[dict] = []
+    for path in files:
+        parts = path.replace("\\", "/").split("/")
+        basename = parts[-1]
+        in_tests = (len(parts) >= 2 and parts[0] == "tests")
+
+        if not in_tests and ((basename.startswith("test_") or basename.endswith("_test.py"))
+                             and basename.endswith(".py")):
+            issues.append({
+                "file": path, "kind": "misplaced_test",
+                "detail": "Testdatei ausserhalb tests/ — Blindflug: vor dem Anlegen ls <projekt> prüfen",
+            })
+
+        # Root-Code: .py im Repo-Root, nicht in src/, tests/, docs/, setup.py, conftest.py
+        root_ok = {"setup.py", "conftest.py", "pyproject.toml"}
+        if (len(parts) == 1 and basename.endswith(".py")
+                and basename not in root_ok
+                and not basename.startswith("test_")
+                and not basename.endswith("_test.py")):
+            issues.append({
+                "file": path, "kind": "root_code",
+                "detail": "Code-Datei im Projekt-Root — gehört nach src/ (Ausnahmen: setup.py, conftest.py)",
+            })
+    return issues
 
 
 # ─────────────────────────── git-basierter CLI-Pfad ───────────────────────────
@@ -207,6 +240,11 @@ def check_git(base: str = "HEAD", head: Optional[str] = None, staged: bool = Fal
                     all_issues.append(issue)
             else:
                 all_issues.append(issue)
+
+    # Misplaced-File-Check: Testdateien ausserhalb tests/, Root-.py
+    all_misplaced = set(files) | set(added)
+    all_issues.extend(_check_misplaced(list(all_misplaced)))
+
     return {"verdict": verdict_for(all_issues), "issues": all_issues, "files": files}
 
 
@@ -231,12 +269,15 @@ def main() -> int:
     v = result["verdict"]
     n = len(result.get("files", []))
     print(f"{v} REGRESSION-GUARD — {n} modifizierte .py-Datei(en) geprüft")
-    _icons = {"symbol_loss": "🔴", "size_collapse": "🟡", "symbol_moved": "🔵"}
+    _icons = {"symbol_loss": "🔴", "size_collapse": "🟡", "symbol_moved": "🔵",
+              "misplaced_test": "🚫", "root_code": "📦"}
     for issue in result["issues"]:
         icon = _icons.get(issue["kind"], "🟡")
         print(f"  {icon} {issue['file']}: {issue['detail']}")
     if v == "🟢":
         print("  ✓ keine destruktiven Änderungen (🔵 = nur verschoben, ok)")
+    elif v == "🟡":
+        print("  ⚠ Warnung(en) — Commit geht durch, bitte prüfen")
     return 1 if v == "🔴" else 0
 
 

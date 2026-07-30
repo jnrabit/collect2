@@ -43,13 +43,14 @@ Belegte Quellen-Lage (Stand 2026-07-29, Basismodell-Messung):
 | `format` | Output-Format verletzt (mehrzeilig wo einzeilig gefordert, Geschwätz) | **ja** — C: einzeilige Rewrites in T1/T2 |
 | `multi_step` | Fehler entsteht erst im Zusammenspiel mehrerer Schritte | **ungeklärt** — nicht gemessen; die Probe-Suite testet Einzelschritte. Bis zum Beleg: **nur Handarbeit** annehmen |
 | `konfabulation` | inhaltlich erfundene Aussage mit Sicherheitston | **nein** — modellübergreifend ungelöst; D konfabulierte in T4 einen medizinischen Kontext. Nur Handarbeit |
+| `blindflug` | Agent handelt ohne vorherigen Kontext-Check (kein `ls`/`Read` des Zielverzeichnisses) — Dateien am falschen Ort, existierende Konventionen ignoriert | **prozessual** — Workflow-Prompt-Regel adressiert es (Pre-Flight-Check). **KEIN Modellfehler** |
 | `kein_trace` | kein echter Modellausgang (Testfixture/Platzhalter im Bestand) — **Korpusdefekt, kein Modellfehler** | — ausschließen, nicht lernen |
 | `sonstiges` | passt in keine Klasse — Freitext Pflicht | — Kandidat für neue Klasse |
 
-> **`kein_trace` zählt NICHT in die Fehlerquote.** Sonst misst man die eigene
-> Testdaten-Verschmutzung als Modellschwäche und entscheidet den Finetune auf
-> einer falschen Zahl. Die Klasse wird in `stats` trotzdem ausgewiesen — sie
-> ist die Arbeitsliste für die Korpus-Bereinigung.
+> **`kein_trace` und `blindflug` zählen NICHT in die Fehlerquote.** Sonst misst man die eigene
+> Testdaten-Verschmutzung oder Agent-Prozessfehler als Modellschwäche und entscheidet den
+> Finetune auf einer falschen Zahl. Die Klassen werden in `stats` trotzdem ausgewiesen —
+> sie sind die Arbeitsliste für Korpus-Bereinigung und Prozess-Verbesserung.
 
 **Lesehilfe zur Spalte:** „ja" heißt *nicht* „ist kein Problem", sondern: eine
 Quelle für saubere Zielbeispiele existiert. Eine Klasse mit „ja" und hoher
@@ -170,6 +171,29 @@ ausgeschlossen, nicht als Fehlerbild gelernt.
 - **Beleg (Anlass der Klasse):** 21 solcher Einträge im Bestand vom
   2026-07-29, sämtlich `step_kind=answer`, entstanden beim Bau der
   Trace-Pipeline.
+
+### `blindflug`
+Der Agent handelt, ohne vorher die Zielstruktur zu lesen — kein `ls`, kein
+`Read` des Zielverzeichnisses oder der existierenden Dateien. Resultat: Code
+wird am falschen Ort abgelegt, existierende Konventionen ignoriert, vorhandene
+Funktionalität dupliziert. Ein **Prozess**fehler — nicht der Output des Modells
+ist falsch, sondern der Workflow hat einen Schritt ausgelassen.
+
+- **Positiv:** Agent legt `tests/test_engine.py` im leeren `~/projekte/quelibrium/`
+  ab, ohne vorher `ls` gemacht zu haben — die Python-Testdatei gehört nicht in
+  ein C++-Projekt und dupliziert das, was CMake+CTest schon leisten.
+- **Positiv:** Agent schreibt `src/engine.cpp`, ohne zu prüfen, ob dort schon
+  Code liegt (es lag keiner — aber er hat nicht geschaut).
+- **Abgrenzung:** Agent liest die Zielstruktur (`ls`, `Read`) und trifft dann
+  eine *fachlich falsche* Entscheidung → das ist ein Modellfehler
+  (z.B. `rewrite_falsch`), kein `blindflug`.
+- **Abgrenzung:** Agent hat den Pre-Flight-Check gemacht (`ls` zeigt leeres
+  Verzeichnis) und entscheidet korrekt, neu anzulegen → kein Fehler.
+- **Beleg (Anlass der Klasse):** 2026-07-30: Workflow-Agent verbringt 98 s
+  damit, `test_engine.py` in `quelibrium/` zu bauen, ohne je `ls quelibrium/`
+  aufgerufen zu haben. Verify (Exit 2) bricht ab, aber erst nach zwei
+  Repair-Runden. Ohne `ls` wusste der Agent nicht, dass er in einem leeren
+  C++-Projekt operiert.
 
 ### `sonstiges`
 Auffangklasse. **`--note` ist Pflicht.** Häufen sich hier ähnliche Fälle, ist
