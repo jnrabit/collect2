@@ -12,7 +12,7 @@ def _fresh(**env):
 
 def test_defaults_local_first():
     s = _fresh()
-    assert s.main_model == "qwen2.5:7b"
+    assert s.main_model == "qwen3:8b"
     assert s.code_model == "qwen2.5:7b"
     assert s.embedding_device == "cpu"  # VRAM gehört der LLM (DESIGN.md §5.6)
     assert s.embedding_dim == 384

@@ -65,7 +65,7 @@ def test_known_topics_are_answerable(service, query):
 
 
 def test_gibberish_lands_in_fallback_or_gray(service):
-    r = service.retrieve("xyzzy plugh frobnicate quux blorp", top_k=30)
+    r = service.retrieve("xyzzy plugh frobnicate quux blorp gribble flarn", top_k=30)
     vault = r.general or r.code
     # Nonsens darf keine TRUST-Antwort bekommen (Halluzinations-Schutz)
     assert vault.verdict.zone != "TRUST", (

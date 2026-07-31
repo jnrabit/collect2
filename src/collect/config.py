@@ -311,8 +311,10 @@ class CollectSettings(BaseSettings):
     ollama_host: str = "localhost"
     ollama_port: int = 11434
     main_model: str = Field(
-        default="qwen2.5:7b",
-        description="Generalist für Q&A-Synthese (passt GPU-only in 8GB VRAM)",
+        default="qwen3:8b",
+        description="Generalist für Q&A-Synthese. qwen3:8b per Messung "
+                    "(BASISMODELL_BERICHT, 2026-07-29): 20/24 auf eval_hard, "
+                    "passt in 8GB VRAM, verdrängt den 7b sauber von der GPU.",
     )
     code_model: str = Field(
         default="qwen2.5:7b",
@@ -326,8 +328,10 @@ class CollectSettings(BaseSettings):
                     "korrumpieren das Retrieval unbemerkt — daher der Generalist.",
     )
     decompose_model: str = Field(
-        default="qwen2.5:3b",
-        description="Kleines Modell für Mehr-Aspekt-Query-Zerlegung (Pre-Retrieval)",
+        default="qwen3:8b",
+        description="Modell für Mehr-Aspekt-Query-Zerlegung (Pre-Retrieval). "
+                    "qwen3:8b statt qwen2.5:3b: bessere Subquery-Qualität, "
+                    "kein separates Modell im VRAM (main=rewrite=decompose=8b).",
     )
     translate_enabled: bool = True
     decompose_enabled: bool = True
@@ -416,10 +420,9 @@ class CollectSettings(BaseSettings):
 
     # ── Retrieval-Verhalten ─────────────────────────────────────────────
     retrieval_profile: str = Field(
-        default="auto",
-        description="Retrieval-Profil: auto (KI erkennt), precise, balanced, "
-                    "broad, resonant, chaos, adaptive. 'auto' analysiert die "
-                    "Query und wählt selbst; ein fester Name forciert das Profil. "
+        default="chaos",
+        description="Retrieval-Profil: chaos (Lorenz-Warp + Thompson + Resonance), "
+                    "balanced, broad, resonant, precise, adaptive, auto. "
                     "Prefix-Override im Query-Text ([precise] etc.) hat Vorrang.",
     )
     retrieval_deterministic: bool = Field(
@@ -491,9 +494,10 @@ class CollectSettings(BaseSettings):
     # ── Routing & Antwortlogik ──────────────────────────────────────────
     code_route_high: float = 0.40
     code_route_low: float = 0.25
-    # Zonen-Schwellen — rekalibriert auf das deterministische Scoring
-    # (Benchmark 2026-07: relevante Queries 17–47, Nonsens ab ~51; die
-    # Alt-System-Werte 55/68 galten für das entropie-modulierte Scoring).
+    # Zonen-Schwellen — kalibriert auf das deterministische Scoring (Benchmark
+    # 2026-07: relevante Queries 17–47, Nonsens ab ~51). Der Chaos-Modus
+    # (Lorenz-Warp) verschiebt Distanzen nach UNTEN (bessere Matches) —
+    # daher hier kein höherer Wert nötig; der Warp liefert die Exploration.
     vault_trust_threshold: float = 50.0
     vault_soft_max_distance: float = 62.0
     code_vault_trust_threshold: float = 57.0

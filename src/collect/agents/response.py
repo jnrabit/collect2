@@ -14,6 +14,7 @@ Synthese (Reihenfolge aus der Stabilisierung des Alt-Systems):
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -131,6 +132,53 @@ class ResponseAgent(BaseAgent):
         self.log.info("%s: finalisiert (%s, %.1fs)", cid[:8], reason, meta["duration_s"])
 
 
+# ── Bloat-Filter: entfernt redundante Sätze (Satz-n im Wesentlichen = Satz-n−1) ──
+
+# Deutsche Stopwörter für Wort-Überlappungs-Berechnung
+_STOP = frozenset({
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+    "und", "oder", "aber", "ist", "sind", "war", "wird", "werden", "wurde",
+    "nicht", "mit", "von", "zu", "auf", "in", "aus", "für", "bei", "durch",
+    "auch", "noch", "nur", "wie", "was", "wann", "warum", "sich", "dass",
+    "kann", "können", "soll", "muss", "hat", "haben", "wenn", "weil", "da",
+    "als", "bis", "um", "vor", "nach", "seit", "über", "unter", "zwischen",
+    "dann", "noch", "schon", "immer", "jetzt", "hier", "dort", "so", "also",
+    "zusammenfassend", "abschließend", "festgehalten", "lässt", "sagen",
+    "könnte", "würde", "wäre", "möchte", "mehr", "weniger", "dabei", "dazu",
+    "damit", "dadurch", "dafür", "dagegen", "deshalb", "trotzdem", "denn",
+})
+
+_SENT_RE = re.compile(r"[^.!?\n]+[.!?\n]+")
+
+
+def _strip_bloat(text: str) -> str:
+    """Sätze mit >50% Wort-Überlappung zum Vorgänger entfernen (Bloat-Filter).
+    Fängt generische Füllsätze: 'Zusammenfassend lässt sich sagen, dass der
+    Lorenz-Attraktor ein chaotisches System ist. Der Lorenz-Attraktor ist
+    also ein chaotisches System, das...' → zweiter Satz fliegt."""
+    if not text or len(text) < 80:
+        return text
+    sentences = [s.strip() for s in _SENT_RE.findall(text) if s.strip()]
+    if len(sentences) <= 1:
+        return text
+
+    filtered = [sentences[0]]
+    for sent in sentences[1:]:
+        prev_words = {w.lower() for w in re.findall(r"[a-zA-ZäöüßÄÖÜ]+", filtered[-1])
+                      if w.lower() not in _STOP and len(w) > 2}
+        cur_words = {w.lower() for w in re.findall(r"[a-zA-ZäöüßÄÖÜ]+", sent)
+                     if w.lower() not in _STOP and len(w) > 2}
+        if not prev_words or not cur_words:
+            filtered.append(sent)
+            continue
+        overlap = len(prev_words & cur_words) / min(len(prev_words), len(cur_words))
+        if overlap <= 0.5:
+            filtered.append(sent)
+    return " ".join(filtered) if len(filtered) < len(sentences) else text
+
+
+# ── Synthese ─────────────────────────────────────────────────────────
+
 def synthesize(state: dict) -> tuple[str, dict]:
     """Reine Synthese-Funktion (transportfrei, direkt testbar)."""
     contribs = state["contribs"]
@@ -182,7 +230,7 @@ def synthesize(state: dict) -> tuple[str, dict]:
         meta["tokens"] = llm["eval_count"]
         meta["tok_per_s"] = llm.get("tok_per_s")
     if llm is not None:
-        content = (llm.get("content") or "").strip()
+        content = _strip_bloat((llm.get("content") or "").strip())
         # Erdung wie in llm.py; Entscheidung zentral in zones.fallback_suppressed
         grounded = bool(planning or workflow or has_file
                         or (facts_used and content))

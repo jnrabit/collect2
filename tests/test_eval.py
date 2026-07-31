@@ -92,7 +92,7 @@ def test_no_regression_on_identical():
 
 def test_zone_regression_detected():
     good = ev.run_eval(_good_service(), QUERIES, ["basis"], 1)["basis"]
-    bad_svc = FakeService({"tls frage": (55.0, ["TLS Handshake"]),  # GRAUZONE
+    bad_svc = FakeService({"tls frage": (55.0, ["TLS Handshake"]),  # GRAUZONE (>50)
                            "nonsens blorp": (999.0, [])})
     bad = ev.run_eval(bad_svc, QUERIES, ["basis"], 1)["basis"]
     reg, _ = ev.check_regression(bad, _baseline_from(good))

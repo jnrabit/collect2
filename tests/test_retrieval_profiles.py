@@ -106,7 +106,7 @@ def test_config_get_profile_invalid():
 def test_resolve_profile_empty_query():
     from collect.config import settings
     result = resolve_profile("", settings.retrieval_profile)
-    assert result == "balanced"
+    assert result == "chaos"  # default jetzt chaos statt auto
 
 
 # ── Regression: "ist"/"was" dürfen NICHT precise kapern ──────────────────
@@ -158,7 +158,8 @@ def test_orchestrator_strips_profile_prefix():
 def test_orchestrator_passes_auto_detected_profile():
     bus = _run_orchestrator("TLS Handshake")
     ret = [m for ch, m in bus.published if ch == "retrieval_request"][0]
-    assert ret.data["profile"]["alpha"] == 0.80  # balanced
+    # Default-Profil ist jetzt chaos → 0.50 alpha
+    assert ret.data["profile"]["alpha"] == 0.50
 
 
 # ── REPL: /retrieval set wirkt per Prefix (Client kann Service-Settings

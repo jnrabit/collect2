@@ -75,7 +75,7 @@ def _state(expected, contribs):
 
 def test_synthesize_gray_zone_hint():
     text, meta = synthesize(_state(["retrieval", "llm"], {
-        "retrieval": {"zone": "GRAUZONE", "best_distance": 57.3, "count": 2, "hits": []},
+        "retrieval": {"zone": "GRAUZONE", "best_distance": 59.0, "count": 2, "hits": []},
         "llm": {"content": "Antwort mit Vorsicht."},
     }))
     assert meta["zone"] == "GRAUZONE"
