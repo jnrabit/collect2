@@ -345,8 +345,8 @@ class CollectSettings(BaseSettings):
     llm_flush_secs: float = 0.15
     # Antwort-Tiefe: mehr/längere Quellen im Prompt → ausführlichere Synthese,
     # aber längerer Prompt (langsamer, mehr Kontext). Richtung "C" (tief).
-    llm_doc_chars: int = Field(default=1500, description="Zeichen pro Vault-Quelle im Prompt")
-    llm_top_docs: int = Field(default=8, description="Anzahl Quellen im Prompt")
+    llm_doc_chars: int = Field(default=800, description="Zeichen pro Vault-Quelle im Prompt")
+    llm_top_docs: int = Field(default=5, description="Anzahl Quellen im Prompt")
     llm_num_predict: int = Field(
         default=2048,
         description="Ollama num_predict: max generierte Tokens pro Antwort "
@@ -363,8 +363,8 @@ class CollectSettings(BaseSettings):
     llm_web_chars: int = Field(default=1500, description="Zeichen pro Web-Treffer im Prompt")
     llm_web_max: int = Field(default=8, description="max. Web-Treffer im Prompt")
     llm_num_ctx: int = Field(
-        default=16384,
-        description="Ollama-Kontextfenster (Tokens). WICHTIG: Ollama-Default ist "
+        default=32768,
+        description="Ollama-Kontextfenster (Tokens). qwen3:8b unterstützt 128k. "
                     "nur 4096 → tiefe Prompts würden STILL abgeschnitten. 16384 "
                     "passt qwen2.5:7b GPU-only in 8GB (verifiziert, 6.3 GB).")
     llm_prompt_char_budget: int = Field(
