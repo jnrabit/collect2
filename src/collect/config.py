@@ -72,7 +72,7 @@ class CollectSettings(BaseSettings):
         default=300.0,
         description="Deadline (s) für Plan-Queries (Kaskade braucht länger)",
     )
-    llm_timeout: float = 180.0
+    llm_timeout: float = 360.0
     decide_timeout: float = 90.0
     step_timeout: float = 60.0
     max_plan_steps: int = 6
