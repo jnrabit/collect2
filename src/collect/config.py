@@ -526,7 +526,7 @@ class CollectSettings(BaseSettings):
         default=500, description="Autopilot: max Zyklen (0=endlos)")
 
     # ── Timeouts ────────────────────────────────────────────────────────
-    query_timeout: float = 180.0
+    query_timeout: float = 360.0
     retrieval_timeout: float = 8.0
 
     @property
