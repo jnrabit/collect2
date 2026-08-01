@@ -108,8 +108,8 @@ class CollectSettings(BaseSettings):
     file_max_files: int = Field(
         default=25, description="max. Dateien bei Verzeichnis-Lesen")
     file_max_depth: int = Field(default=3, description="max. Verzeichnistiefe")
-    file_chunk_chars: int = Field(default=1200, description="Chunk-Größe (Zeichen)")
-    file_top_chunks: int = Field(default=6, description="relevanteste Chunks in die Synthese")
+    file_chunk_chars: int = Field(default=800, description="Chunk-Größe (Zeichen)")
+    file_top_chunks: int = Field(default=3, description="relevanteste Chunks in die Synthese")
     file_extensions: str = Field(
         default=".py,.js,.ts,.go,.rs,.java,.c,.h,.cpp,.sh,.md,.txt,.rst,"
                 ".toml,.yaml,.yml,.json,.cfg,.ini",
