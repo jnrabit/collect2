@@ -108,8 +108,8 @@ class CollectSettings(BaseSettings):
     file_max_files: int = Field(
         default=25, description="max. Dateien bei Verzeichnis-Lesen")
     file_max_depth: int = Field(default=3, description="max. Verzeichnistiefe")
-    file_chunk_chars: int = Field(default=800, description="Chunk-Größe (Zeichen)")
-    file_top_chunks: int = Field(default=3, description="relevanteste Chunks in die Synthese")
+    file_chunk_chars: int = Field(default=600, description="Chunk-Größe (Zeichen)")
+    file_top_chunks: int = Field(default=2, description="relevanteste Chunks in die Synthese")
     file_extensions: str = Field(
         default=".py,.js,.ts,.go,.rs,.java,.c,.h,.cpp,.sh,.md,.txt,.rst,"
                 ".toml,.yaml,.yml,.json,.cfg,.ini",
@@ -345,8 +345,8 @@ class CollectSettings(BaseSettings):
     llm_flush_secs: float = 0.15
     # Antwort-Tiefe: mehr/längere Quellen im Prompt → ausführlichere Synthese,
     # aber längerer Prompt (langsamer, mehr Kontext). Richtung "C" (tief).
-    llm_doc_chars: int = Field(default=800, description="Zeichen pro Vault-Quelle im Prompt")
-    llm_top_docs: int = Field(default=5, description="Anzahl Quellen im Prompt")
+    llm_doc_chars: int = Field(default=600, description="Zeichen pro Vault-Quelle im Prompt")
+    llm_top_docs: int = Field(default=4, description="Anzahl Quellen im Prompt")
     llm_num_predict: int = Field(
         default=2048,
         description="Ollama num_predict: max generierte Tokens pro Antwort "
