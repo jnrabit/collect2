@@ -72,7 +72,7 @@ class CollectSettings(BaseSettings):
         default=300.0,
         description="Deadline (s) für Plan-Queries (Kaskade braucht länger)",
     )
-    llm_timeout: float = 120.0
+    llm_timeout: float = 180.0
     decide_timeout: float = 90.0
     step_timeout: float = 60.0
     max_plan_steps: int = 6
@@ -94,9 +94,12 @@ class CollectSettings(BaseSettings):
     # ── Ad-hoc-Dateikontext + lokaler Ingest ────────────────────────────
     file_context_enabled: bool = True
     read_paths: Optional[list[Path]] = Field(
-        default=None,
-        description="Allowlist für Ad-hoc-Datei-Lesen; None = executor_read_roots. "
-                    "Erweiterung ist bewusster Opt-in (COLLECT_READ_PATHS, CSV).",
+        default_factory=lambda: [
+            Path.home() / "projekte",
+            Path.home() / "collect2",
+        ],
+        description="Allowlist für Ad-hoc-Datei-Lesen. Enthält ~/projekte/ + ~/collect2/ — "
+                    "bewusst Opt-in pro Projekt, nie / root.",
     )
     file_direct_threshold: int = Field(
         default=8192, description="Datei < N Bytes → ganz in den Prompt (kein Chunking)")
