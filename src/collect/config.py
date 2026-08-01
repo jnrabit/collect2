@@ -363,8 +363,8 @@ class CollectSettings(BaseSettings):
     llm_web_chars: int = Field(default=1500, description="Zeichen pro Web-Treffer im Prompt")
     llm_web_max: int = Field(default=8, description="max. Web-Treffer im Prompt")
     llm_num_ctx: int = Field(
-        default=32768,
-        description="Ollama-Kontextfenster (Tokens). qwen3:8b unterstützt 128k. "
+        default=16384,
+        description="Ollama-Kontextfenster (Tokens). 16k passt in 8GB VRAM mit qwen3:8b "
                     "nur 4096 → tiefe Prompts würden STILL abgeschnitten. 16384 "
                     "passt qwen2.5:7b GPU-only in 8GB (verifiziert, 6.3 GB).")
     llm_prompt_char_budget: int = Field(
