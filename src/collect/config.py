@@ -65,7 +65,7 @@ class CollectSettings(BaseSettings):
     # ── Agenten ─────────────────────────────────────────────────────────
     heartbeat_interval: float = 10.0
     response_deadline: float = Field(
-        default=180.0,
+        default=300.0,
         description="Deadline (s) für die Manifest-Finalisierung im ResponseAgent",
     )
     plan_deadline: float = Field(
