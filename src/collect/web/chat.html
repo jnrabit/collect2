@@ -257,7 +257,7 @@ form.addEventListener("submit", (e) => {
   el("msg user", q);
   input.value = "";
   setBusy(true);
-  ws.send(JSON.stringify({ query: p ? `[${p}] ${q}` : q }));
+  ws.send(JSON.stringify({ query: p ? `[${p}] ${q}` : q, timeout: 600 }));
 });
 
 // ── Quellen-Liste unter der Antwort ──────────────────────────────────────────

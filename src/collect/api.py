@@ -86,7 +86,8 @@ def create_app():
                             history = list(db_history)
                     except Exception:
                         pass
-                events = stream(query, history=list(history),
+                timeout = float(req.get("timeout", settings.query_timeout))
+                events = stream(query, timeout=timeout, history=list(history),
                                 session_id=str(session_id) if session_id else None)
                 try:
                     while True:
