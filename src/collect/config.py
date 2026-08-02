@@ -314,10 +314,10 @@ class CollectSettings(BaseSettings):
     ollama_host: str = "localhost"
     ollama_port: int = 11434
     main_model: str = Field(
-        default="qwen3:8b",
-        description="Generalist für Q&A-Synthese. qwen3:8b per Messung "
-                    "(BASISMODELL_BERICHT, 2026-07-29): 20/24 auf eval_hard, "
-                    "passt in 8GB VRAM, verdrängt den 7b sauber von der GPU.",
+        default="qwen2.5:7b",
+        description="Generalist für Q&A-Synthese (passt in 8GB VRAM, ~50 tok/s). "
+                    "qwen3:8b (20/24 eval_hard) overflowt die GPU bei File+Prompt "
+                    "→ 83% GPU/17% CPU → 180s+ Timeout. Erst mit 12 GB VRAM sinnvoll.",
     )
     code_model: str = Field(
         default="qwen2.5:7b",
@@ -331,10 +331,9 @@ class CollectSettings(BaseSettings):
                     "korrumpieren das Retrieval unbemerkt — daher der Generalist.",
     )
     decompose_model: str = Field(
-        default="qwen3:8b",
-        description="Modell für Mehr-Aspekt-Query-Zerlegung (Pre-Retrieval). "
-                    "qwen3:8b statt qwen2.5:3b: bessere Subquery-Qualität, "
-                    "kein separates Modell im VRAM (main=rewrite=decompose=8b).",
+        default="qwen2.5:3b",
+        description="Kleines Modell für Mehr-Aspekt-Query-Zerlegung (Pre-Retrieval). "
+                    "3b passt in GPU, 8b overflowt.",
     )
     translate_enabled: bool = True
     decompose_enabled: bool = True
