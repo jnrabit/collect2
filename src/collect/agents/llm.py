@@ -268,8 +268,10 @@ class LLMAgent(BaseAgent):
             for c in file_contrib["chunks"]:
                 blocks.append(f"### {c['path']}\n{c['text']}")
             file_block = ("DATEIINHALT (vom Nutzer adressiert — direkt gelesen, "
-                          "als gesichert behandeln; beantworte die Frage GESTÜTZT "
-                          "auf diesen Inhalt):\n" + "\n\n".join(blocks) + "\n\n")
+                           "als gesichert behandeln; beantworte die Frage "
+                           "AUSSCHLIESSLICH gestützt auf diesen Inhalt. "
+                           "Vault-Quellen sind nur Hintergrund, falls der "
+                           "Dateiinhalt nichts zur Frage enthält):\n" + "\n\n".join(blocks) + "\n\n")
 
         # Web-Recherche — mit Links (URLs). Bei EXPLIZITER Anfrage ist Web die
         # primäre Quelle (der Nutzer wollte eine Web-Suche); bei Auto-Web
