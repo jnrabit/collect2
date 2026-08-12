@@ -184,6 +184,41 @@ class ResonanceField:
             "cluster_sizes": sorted([len(c) for c in self.emergent_clusters], reverse=True)[:10],
         }
 
+    def export_graph(self, max_nodes: int = 200, max_edges: int = 500) -> dict:
+        threshold = self._adaptive_threshold()
+        nodes, edges, seen = [], [], set()
+        for ia, nbrs in self.R.items():
+            for ib, w in nbrs.items():
+                if w > threshold and ia < ib:
+                    edges.append({"source": str(ia), "target": str(ib), "weight": float(w)})
+                    seen.update([ia, ib])
+
+        for nid in seen:
+            pos = self.doc_positions.get(nid, np.zeros(self.n_lorenz_dims))
+            cluster_id = next((ci for ci, c in enumerate(self.emergent_clusters) if nid in c), -1)
+            nodes.append({
+                "id": str(nid),
+                "x": float(pos[0]), "y": float(pos[1]),
+                "z": float(pos[2]) if len(pos) > 2 else 0.0,
+                "cluster": cluster_id,
+                "strength": float(sum(self.R[nid].values()))
+            })
+
+        nodes.sort(key=lambda n: n["strength"], reverse=True)
+        edges.sort(key=lambda e: e["weight"], reverse=True)
+
+        return {
+            "nodes": nodes[:max_nodes],
+            "edges": edges[:max_edges],
+            "clusters": len(self.emergent_clusters),
+            "gravity_centers": [
+                {"x": float(c[0][0]), "y": float(c[0][1]),
+                 "z": float(c[0][2]) if len(c[0]) > 2 else 0.0,
+                 "strength": float(c[1]), "size": len(c[2])}
+                for c in self.gravity_centers
+            ],
+        }
+
     # ── Persistenz ───────────────────────────────────────────────────────
 
     def save(self) -> None:

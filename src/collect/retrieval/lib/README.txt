@@ -1,14 +1,19 @@
 libquelibrium.so — Chaos-Retrieval-Engine (vendored)
 
-  sha256: d7beab214d17da2fa498dab4fee5df75f60600e7a214c668dcc5a98218464a47
-  Größe:  ~48 KB
+  sha256: de64b088d01ff86c0daf3e47a2fd55db97eae3997014e06231135afa5d5fcbdb
+  Größe:  ~40 KB
   Source: ~/projekte/quelibrium/
           CMake: cd build && cmake .. && cmake --build .
 
-  ABI:
+  ABI (v0.3 — Hardware-IO erweitert):
     void*  init_quelibrium(int buffer_mb)
     void   free_quelibrium(void* ctx)
     void   get_system_state(void* ctx, float out[9])
+    void   get_system_state_v2(void* ctx, float out[14])       ← NEU: +5 Hardware-Felder
+    void   get_hardware_state(void* ctx, float out[5])          ← NEU: nur Sensoren
+    void   enable_hardware_log(void* ctx, const char* path)     ← NEU: CSV-Log
+    void   disable_hardware_log(void* ctx)                      ← NEU
+    int    hardware_log_enabled(void* ctx)                      ← NEU
     void   pulse_system(void* ctx, float strength)
     void   apply_cortex_feedback(void* ctx, int error)
     float  get_cortex_bias(void* ctx, int mode)
