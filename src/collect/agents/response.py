@@ -33,6 +33,7 @@ CONTRIB_CHANNELS = {
     "retrieval_response": "retrieval",
     "code_retrieval_response": "code_retrieval",
     "llm_response": "llm",
+    "llm_response_deepseek": "llm_deepseek",
     "planning_response": "planning",
     "workflow_response": "workflow",
     "file_response": "file",
@@ -223,14 +224,29 @@ def synthesize(state: dict) -> tuple[str, dict]:
 
     # 2. LLM-Antwort mit Drei-Zonen-Logik. Verbürgte Fakten heben den
     # Hard-Fallback auf: eine von Fakten geerdete Antwort wird nicht unterdrückt.
-    llm = contribs.get("llm")
-    facts_used = int(llm.get("facts_used", 0)) if llm else 0
+    # Bei Multi-Model-Ensemble: alle Antworten gegeneinander bewerten
+    # (vibelike-inspiriertes Konsens-Scoring: 40 % Overlap + 40 % Capability
+    # + 20 % Effort, mit Gap-Detection).
+    llm_keys = [k for k in contribs if k.startswith("llm")]
+    is_ensemble = len(llm_keys) > 1
+
+    if is_ensemble:
+        llm_content, llm_contrib, ensemble_meta = _ensemble_llm_content(
+            contribs, llm_keys, verdict)
+        meta.update(ensemble_meta)
+    else:
+        llm_contrib = contribs.get("llm")
+        llm_content = None
+        single = _build_llm_answer_entry("llm", llm_contrib, True, None)
+        meta["llm_answers"] = [single]
+
+    facts_used = int(llm_contrib.get("facts_used", 0)) if llm_contrib else 0
     meta["facts_used"] = facts_used
-    if llm and llm.get("eval_count"):
-        meta["tokens"] = llm["eval_count"]
-        meta["tok_per_s"] = llm.get("tok_per_s")
-    if llm is not None:
-        content = _strip_bloat((llm.get("content") or "").strip())
+    if llm_contrib and llm_contrib.get("eval_count"):
+        meta["tokens"] = llm_contrib["eval_count"]
+        meta["tok_per_s"] = llm_contrib.get("tok_per_s")
+    if llm_contrib is not None:
+        content = _strip_bloat((llm_content or llm_contrib.get("content") or "").strip())
         # Erdung wie in llm.py; Entscheidung zentral in zones.fallback_suppressed
         grounded = bool(planning or workflow or has_file
                         or (facts_used and content))
@@ -257,13 +273,13 @@ def synthesize(state: dict) -> tuple[str, dict]:
             parts.append(content)
             # Ans Token-Limit gelaufen? Ehrlich kennzeichnen statt mitten
             # im Satz stumm zu enden (eval_count == num_predict ⇒ gekappt).
-            if (llm.get("eval_count") or 0) >= settings.llm_num_predict:
+            if (llm_contrib.get("eval_count") or 0) >= settings.llm_num_predict:
                 parts.append(
                     "✂️ *Antwort am Token-Limit abgeschnitten "
                     f"({settings.llm_num_predict} Tokens — "
                     "COLLECT_LLM_NUM_PREDICT erhöhen für längere Antworten).*")
-        elif llm.get("error"):
-            parts.append(f"⚠️ LLM-Fehler: {llm['error']}")
+        elif llm_contrib.get("error"):
+            parts.append(f"⚠️ LLM-Fehler: {llm_contrib['error']}")
     elif "llm" in expected and not planning:
         parts.append("⚠️ Keine LLM-Antwort erhalten (Timeout).")
 
@@ -320,3 +336,165 @@ def synthesize(state: dict) -> tuple[str, dict]:
 
     text = "\n\n".join(p for p in parts if p) or "⚠️ Keine Antwort verfügbar."
     return text, meta
+
+
+# ── Multi-Model-Ensemble (vibelike-inspiriert) ──────────────────────────────
+
+# Capability-Map: relative Stärke pro Provider (erweiterbar für Claude/Gemini).
+# Skala 0–1; höher = vertrauenswürdigeres Modell bekommt mehr Gewicht.
+_CAPABILITY = {
+    "llm": 0.65,            # lokales Ollama (qwen2.5:7b)
+    "llm_deepseek": 0.82,   # DeepSeek-Chat
+}
+
+# Frontend-Labels (erweiterbar für Claude/Gemini)
+_MODEL_LABELS = {
+    "llm": "Ollama (lokal)",
+    "llm_deepseek": "DeepSeek-Chat",
+}
+
+_WORD_RE = re.compile(r'\b\w{5,}\b')
+
+
+def _keyword_overlap(answer: str, other_answers: dict[str, str]) -> float:
+    """Keyword-Überlappung einer Antwort mit allen anderen (0–1).
+
+    Port von vibelike/consensus.py:_calc_overlap_score:
+    Keywords ≥ 5 Zeichen, normalisiert gegen max mögliche Matches.
+    """
+    if not other_answers or not answer:
+        return 0.0
+    words = set(w.lower() for w in _WORD_RE.findall(answer))
+    if not words:
+        return 0.0
+    total = 0
+    for other in other_answers.values():
+        other_words = set(w.lower() for w in _WORD_RE.findall(other))
+        total += len(words & other_words)
+    max_possible = len(words) * max(len(other_answers), 1)
+    return min(total / max_possible, 1.0)
+
+
+def _detect_gaps(answer: str, other_answers: dict[str, str]) -> list[str]:
+    """Themen, die ≥ 2 andere Modelle nennen, aber diese Antwort nicht.
+
+    Port von vibelike/consensus.py:_detect_gaps — Keywords ≥ 6 Zeichen,
+    brauchen mindestens 2 andere als Beleg.
+    """
+    if len(other_answers) < 2:
+        return []
+    gap_re = re.compile(r'\b\w{6,}\b')
+    my_words = set(w.lower() for w in gap_re.findall(answer))
+
+    word_counts: dict[str, int] = {}
+    for other in other_answers.values():
+        seen = set()
+        for w in gap_re.findall(other.lower()):
+            if w not in seen:
+                seen.add(w)
+                word_counts[w] = word_counts.get(w, 0) + 1
+
+    gaps = [w for w, count in word_counts.items()
+            if count >= 2 and w not in my_words]
+    return gaps[:5]
+
+
+def _build_llm_answer_entry(key: str, contrib: dict | None,
+                           winner: bool, score: float | None) -> dict:
+    """Baut einen Eintrag für die llm_answers-Liste (Frontend-Rendering)."""
+    c = contrib or {}
+    content = (c.get("content") or "").strip()
+    skipped = bool(c.get("skipped"))
+    model_detail = c.get("model", "")
+    error = c.get("error", "")
+    return {
+        "model": key,
+        "label": _MODEL_LABELS.get(key, key),
+        "content": content,
+        "winner": winner,
+        "score": round(score, 3) if score is not None else None,
+        "skipped": skipped,
+        "empty": not content or skipped,
+        "model_detail": model_detail,
+        "error": error[:200],
+    }
+
+
+def _ensemble_llm_content(contribs: dict, llm_keys: list,
+                          verdict) -> tuple[str | None, dict, dict]:
+    """Ensemble-Synthese: Score → Winner → Gaps → gesteigerte Antwort.
+
+    Returns:
+        llm_content: bereinigter Text (None = normaler Single-Model-Pfad)
+        llm_contrib: der Beitrag-Dict des Winners (für Metriken)
+        meta: Ensemble-Metadaten (winner, scores, gaps, llm_answers)
+    """
+    # Alle Antworten einsammeln (auch skipped/leere — für Frontend-Anzeige)
+    answers: dict[str, str] = {}
+    contrib_map: dict[str, dict] = {}
+    all_contribs: dict[str, dict] = {}
+    for key in llm_keys:
+        c = contribs.get(key)
+        if c is not None:
+            all_contribs[key] = c
+            if not c.get("skipped") and c.get("content", "").strip():
+                answers[key] = c["content"]
+                contrib_map[key] = c
+
+    if not answers:
+        winner = "none"
+        scores: dict[str, float] = {}
+        winner_key = "llm"
+        winner_contrib = contribs.get("llm", {})
+        answer_list = [_build_llm_answer_entry(k, all_contribs.get(k),
+                                               k == winner_key, None)
+                       for k in llm_keys]
+        return None, winner_contrib, {
+            "ensemble_size": len(llm_keys), "ensemble_winner": winner,
+            "llm_answers": sorted(answer_list, key=lambda x: (0 if x["winner"] else 1, x["model"])),
+        }
+
+    if len(answers) == 1:
+        key = next(iter(answers))
+        answer_list = [_build_llm_answer_entry(k, all_contribs.get(k),
+                                               k == key, 1.0)
+                       for k in llm_keys]
+        return answers[key], contrib_map[key], {
+            "ensemble_size": len(llm_keys), "ensemble_winner": key,
+            "llm_answers": sorted(answer_list, key=lambda x: (0 if x["winner"] else 1, x["model"])),
+        }
+
+    # Scoring: 40 % Overlap + 40 % Capability + 20 % Effort (Länge)
+    scores: dict[str, float] = {}
+    for model, answer in answers.items():
+        others = {m: a for m, a in answers.items() if m != model}
+        overlap = _keyword_overlap(answer, others)
+        capability = _CAPABILITY.get(model, 0.5)
+        effort = min(len(answer) / 800, 1.0)  # Längenbonus bis ~800 Zeichen
+        scores[model] = 0.40 * overlap + 0.40 * capability + 0.20 * effort
+
+    winner = max(scores, key=scores.get)
+    winner_answer = answers[winner]
+    winner_contrib = contrib_map[winner]
+    others_for_gaps = {m: a for m, a in answers.items() if m != winner}
+    gaps = _detect_gaps(winner_answer, others_for_gaps)
+
+    answer_list = [_build_llm_answer_entry(k, all_contribs.get(k),
+                                           k == winner, scores.get(k))
+                   for k in llm_keys]
+    # Winner zuerst, dann nach Score absteigend
+    answer_list.sort(key=lambda x: (0 if x["winner"] else 1, -(x["score"] or 0)))
+
+    meta = {
+        "ensemble_winner": winner,
+        "ensemble_size": len(llm_keys),
+        "ensemble_scores": {k: round(v, 3) for k, v in scores.items()},
+        "llm_answers": answer_list,
+    }
+
+    if gaps:
+        gap_note = ("\n\n💡 *Von anderen Modellen zusätzlich erkannt:*\n"
+                    + "\n".join(f"  • {g}" for g in gaps))
+        return winner_answer + gap_note, winner_contrib, meta
+
+    return winner_answer, winner_contrib, meta

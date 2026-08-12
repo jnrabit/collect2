@@ -23,6 +23,11 @@ def build_agents(bus, generate_fn=None):
 
     Wenn COLLECT_K4N0N3_ENABLED=true und kein generate_fn übergeben wurde,
     wird der K4N0N3-Adapter (k4n0n3.generate) als generate_fn verwendet.
+
+    +api-Modus (COLLECT_API_MODE=true): zusätzliche LLMAgent-Instanzen pro
+    konfiguriertem Cloud-Provider (DeepSeek, später Claude/Gemini). Der
+    Orchestrator erweitert das Manifest; der ResponseAgent synthetisiert
+    per Ensemble-Scoring.
     """
     if generate_fn is None and settings.k4n0n3_enabled:
         from collect.k4n0n3 import generate as _k4generate
@@ -61,11 +66,24 @@ def build_agents(bus, generate_fn=None):
                             settings.knowledge_cache_file,
                             settings.knowledge_field_file)
     code = VaultSearcher(settings.code_vault_file,
-                         settings.code_cache_file,
-                         settings.code_field_file)
+                          settings.code_cache_file,
+                          settings.code_field_file)
 
+    # ── +api mode: Lazy-Provider (Key kommt per Web-UI zur Laufzeit) ──
+    # Der DeepSeek-Agent läuft IMMER — ohne Key antwortet er instant
+    # {skipped:True}, mit Key generiert er normal. Kein Neustart nötig.
+    from collect.providers.registry import LazyDeepSeekProvider
+    api_providers: dict[str, LazyDeepSeekProvider] = {
+        "deepseek": LazyDeepSeekProvider(
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url,
+        ),
+    }
+
+    api_model_names = list(api_providers)
     agents = [
-        OrchestratorAgent(bus, router, translator, decomposer),
+        OrchestratorAgent(bus, router, translator, decomposer,
+                          api_models=api_model_names),
         RetrievalAgent(bus, general, embedder, kind="retrieval"),
         RetrievalAgent(bus, code, embedder, kind="code_retrieval",
                        trust_threshold=settings.code_vault_trust_threshold),
@@ -79,6 +97,12 @@ def build_agents(bus, generate_fn=None):
         FileContextAgent(bus, embedder=embedder),
         WebSearchAgent(bus, embed_fn=embedder.embed_one),
     ]
+
+    # Lazy-LLMAgent pro Provider (läuft immer, aktiv erst mit Key)
+    for name, provider in api_providers.items():
+        agents.append(LLMAgent(bus, generate_fn=provider.generate_streaming,
+                               grounder=grounder, suffix=name))
+
     # Serving-Agent (Modell-getriebene Pipeline) gehoert zum separaten
     # K4N0N3-Auftrag und wird NUR bei explizitem Opt-in in den Bus gehaengt —
     # der Trace-Auftrag darf das Agentenverhalten nicht aendern.

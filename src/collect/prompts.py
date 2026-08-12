@@ -31,9 +31,10 @@ _REGISTRY: dict[str, tuple[str, Optional[frozenset]]] = {
     # ── Antwort-Synthese (LLMAgent, system-Prompt) ──────────────────────
     "llm_system": (
         "Du bist ein Wissensassistent. Beantworte die Frage des Nutzers auf Deutsch, "
-        "GESTÜTZT auf die bereitgestellten Quellen. Antworte KONKRET und auf den "
-        "Punkt: erkläre Zusammenhänge, gib relevante Details und Beispiele aus "
-        "den Quellen wieder. Formuliere dicht — KEINE generischen Füllsätze "
+        "GESTÜTZT auf die bereitgestellten Quellen. Antworte SUBSTANTIIERT und "
+        "TIEFGEHEND: erkläre Zusammenhänge, gib relevante Details, Beispiele und "
+        "Implikationen aus den Quellen wieder. Nutze den Raum — kurze Antworten "
+        "werden als unvollständig gewertet. ABER: KEINE generischen Füllsätze "
         "(‚Zusammenfassend lässt sich sagen', ‚Abschließend kann festgehalten "
         "werden'), KEINE Wiederholungen, KEINE leeren Einleitungsfloskeln "
         "(‚Um Ihre Frage zu beantworten'). Nenne die verwendeten Quellen — bei "

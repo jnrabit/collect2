@@ -27,12 +27,18 @@ SYSTEM_PROMPT = prompts.embedded("llm_system")
 class LLMAgent(BaseAgent):
     name = "llm"
 
-    def __init__(self, bus, generate_fn: Optional[Callable] = None, grounder=None):
+    def __init__(self, bus, generate_fn: Optional[Callable] = None, grounder=None,
+                 suffix: str = ""):
         """grounder: optionaler FactGrounder — verbürgte Ossifikat-Fakten
         werden dem Prompt autoritativ vorangestellt.
         generate_fn: (prompt, system=, on_token=) → str ODER (str, stats) —
-        Rückgabe-Formate beider ollama-Varianten werden akzeptiert."""
+        Rückgabe-Formate beider ollama-Varianten werden akzeptiert.
+        suffix: für Multi-Instanz-Betrieb — "deepseek" → Name="llm_deepseek",
+        Channels="llm_request_deepseek" etc. Ohne Suffix bleibt alles default."""
         super().__init__(bus)
+        self._suffix = suffix
+        if suffix:
+            self.name = f"llm_{suffix}"
         self.generate = generate_fn or ollama.generate_streaming
         self.grounder = grounder
         self._pending: dict[str, dict] = {}  # cid → {query, needs, contribs}
@@ -42,9 +48,13 @@ class LLMAgent(BaseAgent):
         self._early: dict[str, dict] = {}
         self._early_ts: dict[str, float] = {}
 
+    def _ch(self, base: str) -> str:
+        """Kanal-Name mit optionalem Suffix (Multi-Instanz-Routing)."""
+        return f"{base}_{self._suffix}" if self._suffix else base
+
     def subscriptions(self):
         return {
-            "llm_request": self.on_request,
+            self._ch("llm_request"): self.on_request,
             "retrieval_response": self.on_contribution("retrieval"),
             "code_retrieval_response": self.on_contribution("code_retrieval"),
             "file_response": self.on_contribution("file"),
@@ -179,15 +189,15 @@ class LLMAgent(BaseAgent):
         if fallback_suppressed(all_fallback,
                                grounded=bool(facts or has_file or has_web)):
             self.log.info("%s: alle Zonen FALLBACK, keine Fakten/Datei/Web — LLM übersprungen", cid[:8])
-            self.publish("llm_response", "llm_response",
-                         {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
+            self.publish(self._ch("llm_response"), self._ch("llm_response"),
+                          {"content": "", "skipped": True, "model": "", "facts_used": 0}, cid)
             return
 
         self.progress(cid, "llm_generating", "Antwort wird generiert…")
         prompt = self._build_prompt(state, facts)
         try:
             content, stats = self._generate_streamed(cid, prompt)
-            self.publish("llm_response", "llm_response", {
+            self.publish(self._ch("llm_response"), self._ch("llm_response"), {
                 "content": content.strip(), "skipped": False,
                 "model": settings.main_model,
                 "facts_used": len(facts),
@@ -198,9 +208,9 @@ class LLMAgent(BaseAgent):
                           cid[:8], len(content), len(facts), stats.get("tok_per_s"))
         except Exception as e:
             self.log.error("%s: LLM-Fehler: %s", cid[:8], e)
-            self.publish("llm_response", "llm_response",
-                         {"content": "", "skipped": False, "error": str(e),
-                          "facts_used": len(facts)}, cid)
+            self.publish(self._ch("llm_response"), self._ch("llm_response"),
+                          {"content": "", "skipped": False, "error": str(e),
+                           "facts_used": len(facts)}, cid)
 
     def _generate_streamed(self, cid: str, prompt: str) -> tuple[str, dict]:
         # Interim-Batching: pro Ollama-Chunk (≈1 Token) publizieren würde den
@@ -213,7 +223,7 @@ class LLMAgent(BaseAgent):
 
         def flush():
             if buf:
-                self.publish("llm_interim", "llm_interim",
+                self.publish(self._ch("llm_interim"), self._ch("llm_interim"),
                              {"delta": "".join(buf), "tokens": tokens[0]}, cid)
                 buf.clear()
                 last_flush[0] = time.monotonic()
@@ -332,9 +342,12 @@ class LLMAgent(BaseAgent):
         # gekürzt, falls das Budget überschritten wird. num_ctx=16384 macht das
         # im Normalfall unnötig — reines Sicherheitsnetz gegen Overflow.
         head = f"{history_block}{fact_block}{file_block}"
+        # Web-Links nur einfordern, wenn tatsächlich Web-Quellen im Prompt sind —
+        # sonst "erfindet" das Modell eine Entschuldigung für fehlende URLs.
+        cite_note = (" Nenne die verwendeten Web-Links." if web_block else "")
         tail = (f"\n\nFRAGE: {state['query']}\n\n"
-                f"Antworte ausführlich und gestützt auf die obigen Quellen; "
-                f"nenne die verwendeten Web-Links.")
+                f"Antworte ausführlich und gestützt auf die obigen Quellen;"
+                f"{cite_note}")
         fixed_len = len(head) + len(web_block) + len(tail) + 40
         vault_budget = max(0, settings.llm_prompt_char_budget - fixed_len)
         if len(context) > vault_budget:

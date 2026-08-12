@@ -67,7 +67,7 @@ class OrchestratorAgent(BaseAgent):
     name = "orchestrator"
 
     def __init__(self, bus, router, translator=None, decomposer=None,
-                 rewrite_fn=None):
+                 rewrite_fn=None, api_models=None):
         super().__init__(bus)
         self.router = router
         self.translator = translator
@@ -75,6 +75,7 @@ class OrchestratorAgent(BaseAgent):
         if rewrite_fn is None:
             from collect.retrieval.rewriter import rewrite as rewrite_fn
         self.rewrite_fn = rewrite_fn
+        self.api_models = api_models or []  # ["deepseek"] etc.
 
     def subscriptions(self):
         return {"user_query": self.on_user_query}
@@ -190,6 +191,9 @@ class OrchestratorAgent(BaseAgent):
             expected.append("code_retrieval")
         if file_paths:
             expected.append("file")
+        # +api: LLM-Beiträge pro konfiguriertem Provider
+        for model in self.api_models:
+            expected.append(f"llm_{model}")
         self.publish("response_manifest", "response_manifest", {
             "query": query,
             "rewritten_query": rewritten_query,
@@ -211,13 +215,24 @@ class OrchestratorAgent(BaseAgent):
         self.publish("llm_request", "llm_request", {
             **request,
             "original_query": query,
-            "needs": [e for e in expected if e != "llm"],
+            "needs": [e for e in expected if not e.startswith("llm")],
             # Gesprächskontext: nur für die Synthese — Retrieval/Routing
             # laufen auf der aktuellen Query
             "history": msg.data.get("history") or [],
             "referential": referential,
             "rewritten_query": rewritten_query,  # für kontext-aufgelöste Auto-Web-Suche
         }, cid)
+        # +api: LLM-Requests parallel an alle API-Provider
+        for model in self.api_models:
+            self.publish(f"llm_request_{model}", f"llm_request_{model}", {
+                **request,
+                "original_query": query,
+                "needs": [e for e in expected
+                          if not e.startswith("llm")],
+                "history": msg.data.get("history") or [],
+                "referential": referential,
+                "rewritten_query": rewritten_query,
+            }, cid)
         self.publish("retrieval_request", "retrieval_request", request, cid)
         if route != ROUTE_GENERAL:
             self.publish("code_retrieval_request", "code_retrieval_request", request, cid)

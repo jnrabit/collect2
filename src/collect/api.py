@@ -39,6 +39,11 @@ class QueryRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=64)
 
 
+class ApiModeRequest(BaseModel):
+    enabled: bool = False
+    deepseek_key: str = Field(default="", max_length=256)
+
+
 def create_app():
     from fastapi import Depends, FastAPI, HTTPException, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, RedirectResponse
@@ -57,6 +62,53 @@ def create_app():
     def chat():
         html = CHAT_HTML.read_text(encoding="utf-8")
         return HTMLResponse(html.replace("{{TITLE}}", settings.display_name))
+
+    @app.get("/api/clusters")
+    def clusters():
+        """Dokument-Cluster-Graph (Resonanzfeld) fürs Frontend-Banner-Cavnas."""
+        try:
+            import time as _time
+            if (not hasattr(create_app, "_cluster_cache")
+                    or _time.monotonic() - create_app._cluster_ts > 60):
+                from collect.config import settings
+                from collect.retrieval.resonance import ResonanceField
+                kf = settings.knowledge_field_file
+                if not kf or not Path(kf).exists():
+                    return {"nodes": [], "edges": [], "clusters": 0, "gravity_centers": []}
+                create_app._cluster_cache = ResonanceField(Path(kf)).export_graph()
+                create_app._cluster_ts = _time.monotonic()
+            return create_app._cluster_cache
+        except Exception:
+            return {"nodes": [], "edges": [], "clusters": 0, "gravity_centers": []}
+
+    @app.get("/api/hardware")
+    def hardware():
+        """Engine-State (Lorenz + Hardware-Sensoren) fürs Frontend-Banner."""
+        try:
+            from collect.retrieval.native import NativeEngine
+            eng = NativeEngine()
+            st = eng.get_hardware_state()
+            hw = eng.get_hardware_sensors() if hasattr(eng, "get_hardware_sensors") else {}
+            return {
+                "x1": st.get("x1", 0), "y1": st.get("y1", 0),
+                "z1": st.get("z1", 0), "w1": st.get("w1", 0),
+                "x2": st.get("x2", 0), "y2": st.get("y2", 0),
+                "entropy": st.get("entropy", 0),
+                "temperature": st.get("temperature", 0),
+                "cortex_bias": st.get("cortex_bias", 0.5),
+                "cpu_temp": hw.get("cpu_temp", st.get("cpu_temp", -1)),
+                "gpu_temp": hw.get("gpu_temp", st.get("gpu_temp", -1)),
+                "rdtsc_jitter": hw.get("rdtsc_jitter", st.get("rdtsc_jitter", 0)),
+            }
+        except Exception:
+            return {
+                "x1": 0, "y1": 0, "z1": 0, "w1": 0,
+                "x2": 0, "y2": 0,
+                "entropy": 0, "temperature": 45,
+                "cortex_bias": 0.5,
+                "cpu_temp": -1, "gpu_temp": -1,
+                "rdtsc_jitter": 0,
+            }
 
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
@@ -215,6 +267,22 @@ def create_app():
         from collect.session import SessionStore
         SessionStore().delete(sid)
         return {"deleted": sid}
+
+    # ── API-Modus (Laufzeit-Toggle aus der Web-UI) ─────────────────────
+    @app.get("/api/mode")
+    def get_api_mode():
+        from collect.providers.registry import status
+        return status()
+
+    @app.post("/api/mode")
+    def set_api_mode(req: ApiModeRequest):
+        from collect.providers.registry import set_key, clear_key, set_enabled, status
+        set_enabled(req.enabled)
+        if req.deepseek_key:
+            set_key("deepseek", req.deepseek_key)
+        else:
+            clear_key("deepseek")
+        return {"ok": True, **status()}
 
     return app
 

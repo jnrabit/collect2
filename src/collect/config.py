@@ -366,6 +366,28 @@ class CollectSettings(BaseSettings):
         description="Ollama-Kontextfenster (Tokens). 16k passt in 8GB VRAM mit qwen3:8b "
                     "nur 4096 → tiefe Prompts würden STILL abgeschnitten. 16384 "
                     "passt qwen2.5:7b GPU-only in 8GB (verifiziert, 6.3 GB).")
+
+    # ── +api Modus: optionale Cloud-Modelle zur Verstärkung ──────────────
+    api_mode: bool = Field(
+        default=False,
+        description="+api-Modus: Cloud-Modelle als optionale Verstärkung. "
+                    "Bei true werden zusätzliche LLMAgent-Instanzen pro "
+                    "konfiguriertem Provider gestartet. Die Orchestrierung "
+                    "erweitert das Manifest; der ResponseAgent synthetisiert "
+                    "per vibelike-inspiriertem Ensemble-Scoring.",
+    )
+    deepseek_api_key: str = Field(
+        default="",
+        description="DeepSeek API-Key (https://platform.deepseek.com/api_keys)",
+    )
+    deepseek_model: str = Field(
+        default="deepseek-chat",
+        description="DeepSeek-Modell; deepseek-reasoner für Reasoning-Tasks",
+    )
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com/v1",
+        description="DeepSeek API-Base-URL (OpenAI-kompatibel)",
+    )
     llm_prompt_char_budget: int = Field(
         default=40000,
         description="Sicherheits-Cap für die Prompt-Länge (Zeichen); darüber "
