@@ -378,10 +378,14 @@ function renderMath(node) {
     const cfg = { enabled: cb.checked, key: keyInput.value.trim() };
     localStorage.setItem("collect2_api", JSON.stringify(cfg));
     updateStatus();
-    // Backend informieren (best-effort, fire-and-forget)
+    // Backend informieren (best-effort, fire-and-forget) — Token mitsenden,
+    // sonst 401 im Exposure-Modus (COLLECT_API_TOKEN gesetzt).
+    const tok = apiToken();
     fetch("/api/mode", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign(
+        { "Content-Type": "application/json" },
+        tok ? { "Authorization": "Bearer " + tok } : {}),
       body: JSON.stringify({ enabled: cfg.enabled, deepseek_key: cfg.key }),
     }).catch(() => {});
   }
@@ -788,9 +792,11 @@ connect();
 
   async function poll() {
     try {
+      const tok = apiToken();
+      const hdr = tok ? { "Authorization": "Bearer " + tok } : {};
       const [hr, cr] = await Promise.all([
-        fetch("/api/hardware"),
-        fetch("/api/clusters"),
+        fetch("/api/hardware", { headers: hdr }),
+        fetch("/api/clusters", { headers: hdr }),
       ]);
       const hw = await hr.json();
       updateMetrics(hw);

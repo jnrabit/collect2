@@ -24,7 +24,12 @@ class DeepSeekProvider:
                  timeout: float = 120):
         self._api_key = api_key
         self.model = model
-        self._base_url = base_url.rstrip("/")
+        base_url = base_url.rstrip("/")
+        if not base_url.lower().startswith("https://"):
+            raise ValueError(
+                "DeepSeek-Base-URL muss HTTPS sein — sonst ginge der API-Key "
+                f"im Klartext raus. Erhalten: {base_url!r}")
+        self._base_url = base_url
         self._timeout = timeout
 
     @property

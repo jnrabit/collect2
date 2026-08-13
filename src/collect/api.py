@@ -64,7 +64,7 @@ def create_app():
         return HTMLResponse(html.replace("{{TITLE}}", settings.display_name))
 
     @app.get("/api/clusters")
-    def clusters():
+    def clusters(_auth=Depends(require_auth("light"))):
         """Dokument-Cluster-Graph (Resonanzfeld) fürs Frontend-Banner-Cavnas."""
         try:
             import time as _time
@@ -82,7 +82,7 @@ def create_app():
             return {"nodes": [], "edges": [], "clusters": 0, "gravity_centers": []}
 
     @app.get("/api/hardware")
-    def hardware():
+    def hardware(_auth=Depends(require_auth("light"))):
         """Engine-State (Lorenz + Hardware-Sensoren) fürs Frontend-Banner."""
         try:
             from collect.retrieval.native import NativeEngine
@@ -270,12 +270,12 @@ def create_app():
 
     # ── API-Modus (Laufzeit-Toggle aus der Web-UI) ─────────────────────
     @app.get("/api/mode")
-    def get_api_mode():
+    def get_api_mode(_auth=Depends(require_auth("light"))):
         from collect.providers.registry import status
         return status()
 
     @app.post("/api/mode")
-    def set_api_mode(req: ApiModeRequest):
+    def set_api_mode(req: ApiModeRequest, _auth=Depends(require_auth("expensive"))):
         from collect.providers.registry import set_key, clear_key, set_enabled, status
         set_enabled(req.enabled)
         if req.deepseek_key:
