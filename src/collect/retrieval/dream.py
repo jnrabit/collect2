@@ -22,6 +22,7 @@ Port aus ai_neu/dream.py + Project_AI/widerspruchs_matrix.json.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import pickle
