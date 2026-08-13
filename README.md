@@ -26,6 +26,53 @@ collect-api                # REST: /api/health, /api/query, /api/facts (Port 876
 # Dauerbetrieb: deploy/*.service (systemd-User-Units, Anleitung im File)
 ```
 
+## Harvest (Wissens-Ingest in den Vault)
+
+Der Sammelbefehl für neue Docs. Kein Daemon, kein Scheduler — Vault-Writes
+bleiben bewusst ein manueller Auslöser.
+
+```bash
+collect-harvest deep                    # DER Sammelbefehl: alle vier Frontier-Quellen
+                                        # OpenAlex + Semantic Scholar + StackExchange + Gutenberg
+collect-harvest all "quantum chaos"     # Wikipedia + ArXiv + RFC zu einem Thema
+collect-harvest explore --lang de       # autonom: Wiki-SURF + Multi-Source-DEEPEN
+collect-explore --lang de --deep        # dasselbe direkt, mit S2 + OpenAlex statt nur ArXiv
+
+# Einzelquellen
+collect-harvest wikipedia "HTTP protocol" --limit 300 --lang en
+collect-harvest arxiv "transformer attention" --limit 10
+collect-harvest rfc --limit 5
+collect-harvest semantic | openalex | gutenberg | stackexchange
+```
+
+| Flag | Wirkung |
+|---|---|
+| `--limit N` | max. neue Docs (0 = Default: 500 bei `all`, sonst 200) |
+| `--lang en\|de` | Sprache für Wikipedia-Quellen |
+| `--dry-run` | nur sammeln + prüfen, **nicht** in den Vault schreiben |
+| `--no-expand` | keine Wikipedia-Link-Expansion |
+
+Eigenschaften:
+- **Idempotent** — bereits vorhandene Docs (per ID) werden nicht erneut gefetcht.
+- **Abbrechbar** — Ctrl-C (SIGINT/SIGTERM) speichert das bereits Gesammelte, statt es zu verwerfen.
+- **Backup pro Ingest, mit Rotation** — Archiv und Cache werden vor dem Write nach
+  `*.bak-<ts>` kopiert (Rollback: zurückkopieren). Nach erfolgreichem Commit bleiben
+  die `COLLECT_INGEST_KEEP_BACKUPS` jüngsten stehen (Default 3), ältere werden
+  gelöscht. Schlägt der Write fehl, wird **nicht** rotiert — alle Rollback-Punkte
+  bleiben erhalten.
+- Der laufende Agenten-Stack hält eine RAM-Kopie und sieht neue Docs erst nach
+  `bash scripts/restart.sh`.
+
+### Vault-Pflege
+
+```bash
+collect-vault stats       # Bestand, Konsistenz Archiv↔Cache, Quellenverteilung
+collect-vault diff        # neue Docs + Cache-Lücken
+collect-vault rebuild     # fehlende Vektoren embedden
+collect-vault prune       # Waisen-Vektoren entfernen (mit Backup)
+collect-vault dedupe      # Duplikate reporten (löscht nie)
+```
+
 ## Beobachter (Autonome Hintergrundprozesse)
 
 ```bash
