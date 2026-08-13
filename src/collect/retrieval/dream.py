@@ -406,13 +406,18 @@ class DreamCycle:
     def _persist(self) -> None:
         from collect.retrieval.vault import Vault
 
+        logger.info("Dream: persistiere Vault (%d Docs) — kann bei LZMA9/EXTREME Minuten dauern …",
+                    len(self._store.archive))
         self._store._doc_index = {str(d.get("id", i)): d for i, d in enumerate(self._store.archive)}
         Vault(self._store.vault_file).save(self._store.archive)
+        logger.info("Dream: Vault geschrieben — Cache picklen …")
 
         with open(self._store.cache_file, "wb") as f:
             pickle.dump(dict(self._store.doc_cache), f, protocol=4)
+        logger.info("Dream: Cache geschrieben — Matrix neu aufbauen …")
 
         self._store.rebuild_matrix()
+        logger.info("Dream: Matrix ok — Resonanzfeld registrieren …")
 
         if self._field and self._store.doc_cache:
             self._field.register_documents(
